@@ -39,6 +39,7 @@ export default function Home() {
   
   // CASTIGOS & DJ
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
+  const [excusa, setExcusa] = useState<string | null>(null); // Nueva Excusa
   const [isSpinning, setIsSpinning] = useState(false);
   const [showDJ, setShowDJ] = useState(false);
 
@@ -47,37 +48,12 @@ export default function Home() {
   const [timerActive, setTimerActive] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // --- LISTAS MASIVAS (BIG 5 LEAGUES) ---
+  // --- LISTAS ---
   const TEAMS_REAL = [
-    // PREMIER LEAGUE
-    "Man. City 🔵", "Arsenal 🔴", "Liverpool 🔴", "Aston Villa 🦁", "Tottenham ⚪", "Chelsea 🔵",
-    "Newcastle ⚫⚪", "Man. Utd 🔴", "West Ham ⚒️", "Crystal Palace 🦅", "Brighton 🔵⚪",
-    "Bournemouth 🍒", "Fulham ⚪⚫", "Wolves 🐺", "Everton 🔵", "Brentford 🐝",
-    "Nottingham Forest 🌳", "Leicester 🦊", "Southampton 😇", "Ipswich 🚜",
-
-    // LA LIGA
-    "Real Madrid 👑", "FC Barcelona 🔵🔴", "Girona 🔴⚪", "Atlético Madrid 🔴⚪", "Athletic Club 🦁",
-    "Real Sociedad 🔵⚪", "Real Betis 🟢⚪", "Villarreal 🟡", "Valencia 🦇", "Alavés 🔵⚪",
-    "Osasuna 🔴", "Getafe 🔵", "Celta Vigo 💠", "Sevilla 🔴⚪", "Mallorca 👹",
-    "Rayo Vallecano ⚡", "Las Palmas 🌴", "Leganés 🥒", "Valladolid 💜", "Espanyol 🦜",
-
-    // SERIE A
-    "Inter Milán ⚫🔵", "AC Milan ⚫🔴", "Juventus ⚫⚪", "Atalanta ⚫🔵", "Bologna 🔴🔵",
-    "AS Roma 🟠🔴", "Lazio 🦅", "Fiorentina 🟣", "Napoli 🔵", "Torino 🐂",
-    "Genoa 🔴🔵", "Monza 🔴⚪", "Hellas Verona 🟡🔵", "Lecce 🟡🔴", "Udinese ⚫⚪",
-    "Cagliari 🔴🔵", "Empoli 🔵", "Parma 🟡🔵", "Como 🔵", "Venezia 🟠⚫🟢",
-
-    // BUNDESLIGA
-    "B. Leverkusen ⚫🔴", "Stuttgart ⚪🔴", "Bayern Múnich 🔴", "RB Leipzig ⚪🔴", "Dortmund 🟡⚫",
-    "E. Frankfurt 🦅", "Hoffenheim 🔵", "Heidenheim 🔴🔵", "Werder Bremen 🟢", "Freiburg 🦅",
-    "Augsburg ⚪❤️", "Wolfsburg 🟢", "Mainz 05 🔴", "M'gladbach ⚫⚪", "Union Berlin 🔴",
-    "Bochum 🔵", "St. Pauli ☠️", "Holstein Kiel 🔵⚪",
-
-    // LIGUE 1
-    "PSG 🗼", "Monaco 🔴⚪", "Brest 🔴", "Lille 🐶", "Nice 🦅",
-    "Lyon 🦁", "Lens 🔴🟡", "Marseille 🔵⚪", "Reims 🔴", "Rennes 🔴⚫",
-    "Toulouse 🟣", "Montpellier 🟠🔵", "Strasbourg 🔵", "Nantes 🔰", "Le Havre 🔵",
-    "Auxerre 🔵⚪", "Angers ⚫⚪", "Saint-Étienne 🟢"
+    "Man. City 🔵", "Real Madrid 👑", "Bayern Múnich 🔴", "Liverpool 🔴", 
+    "Arsenal 🔴", "Inter Milán ⚫🔵", "PSG 🗼", "FC Barcelona 🔵🔴",
+    "Atlético Madrid 🔴⚪", "B. Leverkusen ⚫🔴", "AC Milan ⚫🔴", "Juventus ⚫⚪",
+    "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Tottenham ⚪"
   ];
 
   const TEAMS_FUNNY = [
@@ -90,6 +66,23 @@ export default function Home() {
   
   const listaSoft = ["Haz 10 flexiones 💪", "Manda un audio cantando 🎤", "Baila sin música 30seg 💃", "No puedes hablar 1 ronda 🤐", "Comentarista next game 🎙️", "Enseña última foto carrete 📱", "Sirve bebida a todos 🥤"];
   const listaChupitos = ["🥃 1 Chupito", "🥃🥃 2 Chupitos", "🌊 ¡Cascada!", "🤝 Elige compañero", "🚫 Te libras", "💀 CHUPITO MORTAL"];
+
+  const EXCUSAS = [
+      "El mando tiene el R2 pillado...", "Es que había lag.", "El handicap de este juego es increíble.",
+      "Me daba el sol en la cara.", "Estaba probando tácticas.", "No quería humillarte.",
+      "El árbitro está comprado.", "Mi jugador se quedó bugueado.", "No es mi mando habitual.",
+      "Tengo los dedos fríos.", "Es que tú juegas con 5 defensas, rata.", "El portero no tiene manos."
+  ];
+
+  const NEWS_TICKER = [
+      "🚨 ÚLTIMA HORA: Se busca la dignidad de los perdedores en objetos perdidos.",
+      "⚽ MERCADO: El Aston Birra ofrece 2 pipas por el fichaje estrella.",
+      "⚠️ ATENCIÓN: Jugar con 5 defensas está penado con cárcel.",
+      "👀 OJO: Se rumorea que el líder del ranking hace trampas.",
+      "🎙️ DECLARACIONES: 'El FIFA está roto', asegura el que acaba de perder 5-0.",
+      "🏆 CHAMPIONS: La orejona busca dueño (y no eres tú).",
+      "🚑 PARTE MÉDICO: Varios pulgares lesionados tras el último partido."
+  ];
 
   const lanzarFiesta = () => {
     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#a864fd', '#29cdff', '#78ff44', '#ff718d', '#fdff6a'] });
@@ -174,7 +167,7 @@ export default function Home() {
         while (nombres.length < size) nombres.push(BYE_NAME);
         
         const shuffledPlayers = [...nombres].sort(() => Math.random() - 0.5);
-        const shuffledTeams = [...TEAMS_REAL].sort(() => Math.random() - 0.5); // Barajamos la lista gigante
+        const shuffledTeams = [...TEAMS_REAL].sort(() => Math.random() - 0.5);
         const shuffledClubs = [...TEAMS_FUNNY].sort(() => Math.random() - 0.5);
 
         const getP = (idx: number) => {
@@ -310,6 +303,11 @@ export default function Home() {
         await setDoc(doc(db, "sala", "principal"), { ultimoCastigo: final }, { merge: true });
         if(tipo === 'chupito') confetti({ particleCount: 50, colors: ['#ff0000'] }); 
     }, 2000);
+  };
+
+  const generarExcusa = () => {
+      const randomExcusa = EXCUSAS[Math.floor(Math.random() * EXCUSAS.length)];
+      setExcusa(randomExcusa);
   };
 
   const handleSorteoPachanga = () => {
@@ -473,6 +471,14 @@ export default function Home() {
                   </div>
               </div>
 
+              {/* EXCUSÓMETRO (NUEVO) */}
+              <div className="mb-8">
+                  <button onClick={generarExcusa} className="w-full bg-blue-900/30 hover:bg-blue-900/50 border border-blue-500/30 text-blue-300 font-bold py-3 rounded-xl transition mb-2">
+                      😭 He perdido... Dame una excusa
+                  </button>
+                  {excusa && <div className="bg-blue-950 p-3 rounded-lg border border-blue-500/50 text-white italic animate-in fade-in">"{excusa}"</div>}
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                   <button disabled={isSpinning} onClick={()=>girarRuleta('soft')} className="bg-neutral-800 p-6 rounded-2xl border border-gray-600 hover:bg-neutral-700 font-bold hover:scale-105 transition shadow-lg">🤡 Reto Soft</button>
                   <button disabled={isSpinning} onClick={()=>girarRuleta('chupito')} className="bg-red-950 p-6 rounded-2xl border border-red-600 hover:bg-red-900 font-bold text-red-200 hover:scale-105 transition shadow-lg shadow-red-900/40">🥃 Chupito</button>
@@ -480,13 +486,22 @@ export default function Home() {
            </section>
         )}
 
+        {/* --- NEWS TICKER (NUEVO) --- */}
+        <div className="fixed bottom-0 left-0 w-full bg-black/90 border-t border-purple-500/30 overflow-hidden z-40 py-1">
+            <div className="animate-marquee whitespace-nowrap flex gap-10">
+                {[...NEWS_TICKER, ...NEWS_TICKER].map((news, i) => (
+                    <span key={i} className="text-xs md:text-sm font-bold text-purple-300 uppercase tracking-wider">{news}</span>
+                ))}
+            </div>
+        </div>
+
         {/* --- BOTONERA TÓXICA (DJ) --- */}
-        <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
+        <div className="fixed bottom-10 right-4 z-50 flex flex-col items-end gap-2">
            <button onClick={() => setShowDJ(!showDJ)} className="bg-purple-600 hover:bg-purple-500 text-white p-4 rounded-full shadow-2xl border-2 border-white/20 animate-pulse active:scale-95 transition">
-             🔊 DJ
+             🔊
            </button>
            {showDJ && (
-             <div className="bg-black/90 p-4 rounded-2xl border border-purple-500/30 backdrop-blur-md shadow-2xl flex flex-col gap-2 animate-in slide-in-from-bottom-5">
+             <div className="bg-black/90 p-4 rounded-2xl border border-purple-500/30 backdrop-blur-md shadow-2xl flex flex-col gap-2 animate-in slide-in-from-bottom-5 mb-2">
                <SoundBtn label="📢 BOCINA" url="https://www.myinstants.com/media/sounds/mlg-airhorn.mp3" color="bg-red-600" />
                <SoundBtn label="🎻 VIOLÍN" url="https://www.myinstants.com/media/sounds/sad-violin-airhorn.mp3" color="bg-blue-600" />
                <SoundBtn label="🦗 GRILLOS" url="https://www.myinstants.com/media/sounds/cricket_1.mp3" color="bg-green-600" />
@@ -498,6 +513,15 @@ export default function Home() {
         </div>
 
       </div>
+      <style jsx global>{`
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee {
+          animation: marquee 30s linear infinite;
+        }
+      `}</style>
     </main>
   );
 }
