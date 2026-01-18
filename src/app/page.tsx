@@ -16,10 +16,13 @@ type Match = {
   score2?: number; 
   winner?: string; 
   round: 'Q' | 'S' | 'F'; 
+  isBye?: boolean; // Nuevo: Marca si es un partido de pase directo
 };
 
 type Player = { nombre: string; puntos: number; victorias: number };
 type Tab = 'home' | 'pachanga' | 'fifa' | 'castigos';
+
+const BYE_NAME = "Pasa Turno ➡️"; // Nombre interno para los huecos
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
@@ -32,8 +35,6 @@ export default function Home() {
   const [fifaMatches, setFifaMatches] = useState<Match[]>([]);
   const [ranking, setRanking] = useState<Player[]>([]);
   const [mayorPaliza, setMayorPaliza] = useState<{winner: string, loser: string, diff: number, result: string} | null>(null);
-  
-  // RULETA
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
   const [isSpinning, setIsSpinning] = useState(false);
 
@@ -54,7 +55,6 @@ export default function Home() {
         const data = doc.data();
         setEquipoA(data.equipoA || []);
         setEquipoB(data.equipoB || []);
-        // Protección para evitar errores si la estructura cambia
         setFifaMatches(Array.isArray(data.fifaMatches) ? data.fifaMatches : []);
         if (data.ultimoCastigo) setResultadoRuleta(data.ultimoCastigo);
         if (data.fifaMatches && Array.isArray(data.fifaMatches)) calcularPaliza(data.fifaMatches);
@@ -75,7 +75,8 @@ export default function Home() {
       let maxDiff = 0;
       let palizaData = null;
       matches.forEach(m => {
-          if (m && m.winner && m.score1 !== undefined && m.score2 !== undefined) {
+          // Ignoramos partidos BYE para la paliza
+          if (m && !m.isBye && m.winner && m.score1 !== undefined && m.score2 !== undefined) {
               const diff = Math.abs(m.score1 - m.score2);
               if (diff > maxDiff) {
                   maxDiff = diff;
@@ -94,7 +95,8 @@ export default function Home() {
     const winner = s1 > s2 ? currentMatch.p1 : currentMatch.p2;
 
     try {
-      if(!winner.includes("Bot") && winner !== "Esperando...") {
+      // 1. Sumar puntos (Solo si NO es un partido Bye)
+      if(!currentMatch.isBye && winner !== "Esperando...") {
         const playerRef = doc(db, "ranking", winner);
         await setDoc(playerRef, { puntos: increment(3), victorias: increment(1) }, { merge: true });
       }
@@ -102,9 +104,9 @@ export default function Home() {
       let nuevosPartidos = [...fifaMatches];
       nuevosPartidos = nuevosPartidos.map(m => m.id === matchId ? { ...m, score1: s1, score2: s2, winner: winner } : m);
 
-      // LÓGICA DE AVANCE INTELIGENTE
-      const isSmallTournament = fifaMatches.length === 3; // Torneo de 4
-      const isBigTournament = fifaMatches.length === 7;   // Torneo de 8
+      // AVANCE
+      const isSmallTournament = fifaMatches.length === 3;
+      const isBigTournament = fifaMatches.length === 7;
 
       if (isSmallTournament) {
           if (matchId === 0) nuevosPartidos[2].p1 = winner;
@@ -128,25 +130,24 @@ export default function Home() {
     } catch (e) { console.error(e); }
   };
 
-  // --- GENERADOR INTELIGENTE ---
-  const handleCrearTorneoAuto = () => {
-    // 1. Limpiar lista
+  // --- GENERADOR INTELIGENTE CON BYES ---
+  const handleCrearTorneoAuto = async () => {
     let nombres = fifaInput.split(/[\n,]+/).map((n) => n.trim()).filter((n) => n);
     
     if (nombres.length < 2) return alert("Mínimo 2 jugadores.");
-    if (nombres.length > 8) return alert("Máximo 8 jugadores por ahora (¡no caben en la pantalla!).");
+    if (nombres.length > 8) return alert("Máximo 8 jugadores.");
 
-    // 2. Decidir tamaño automáticamente
-    let size = 8; // Por defecto grande
-    if (nombres.length <= 4) size = 4; // Si son poquitos, pequeño
+    let size = 8;
+    if (nombres.length <= 4) size = 4;
 
-    // 3. Rellenar con bots lo que falte
-    while (nombres.length < size) nombres.push(`Bot ${nombres.length + 1} 🤖`);
+    // Rellenar con "BYE" en lugar de Bots
+    while (nombres.length < size) nombres.push(BYE_NAME);
     
-    // 4. Barajar y Crear
+    // Barajamos
     const shuffled = [...nombres].sort(() => Math.random() - 0.5);
     let matches: Match[] = [];
 
+    // Estructura Inicial Vacía
     if (size === 4) {
         matches = [
             { id: 0, p1: shuffled[0], p2: shuffled[1], round: 'S' },
@@ -165,11 +166,33 @@ export default function Home() {
         ];
     }
 
-    setDoc(doc(db, "sala", "principal"), { fifaMatches: matches }, { merge: true });
+    // RESOLUCIÓN AUTOMÁTICA DE BYES
+    // Si un partido tiene un "BYE", el otro jugador gana al instante
+    matches.forEach(m => {
+        if (m.p2 === BYE_NAME) {
+            m.winner = m.p1; // Gana el P1
+            m.isBye = true;  // Marcamos como Bye
+        } else if (m.p1 === BYE_NAME) {
+            m.winner = m.p2; // Gana el P2 (raro tras shuffle pero posible)
+            m.isBye = true;
+        }
+    });
+
+    // PROPAGACIÓN INICIAL DE GANADORES BYE A LA SIGUIENTE RONDA
+    if (size === 4) {
+        if (matches[0].winner) matches[2].p1 = matches[0].winner;
+        if (matches[1].winner) matches[2].p2 = matches[1].winner;
+    } else {
+        if (matches[0].winner) matches[4].p1 = matches[0].winner;
+        if (matches[1].winner) matches[4].p2 = matches[1].winner;
+        if (matches[2].winner) matches[5].p1 = matches[2].winner;
+        if (matches[3].winner) matches[5].p2 = matches[3].winner;
+    }
+
+    await setDoc(doc(db, "sala", "principal"), { fifaMatches: matches }, { merge: true });
     setFifaInput("");
   };
 
-  // OTRAS FUNCIONES
   const girarRuleta = async (tipo: 'soft' | 'chupito') => {
     setIsSpinning(true);
     const lista = tipo === 'soft' ? listaSoft : listaChupitos;
@@ -206,7 +229,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-neutral-950 text-white font-sans pb-24 overflow-x-hidden select-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-neutral-950 to-black">
-      {/* HEADER */}
       <header className="bg-neutral-900/80 backdrop-blur-md sticky top-0 z-50 border-b border-white/10 p-4 shadow-lg shadow-purple-900/10">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
             <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 uppercase tracking-tighter cursor-pointer drop-shadow-[0_2px_2px_rgba(255,255,255,0.3)]" onClick={() => setActiveTab('home')}>
@@ -225,7 +247,6 @@ export default function Home() {
 
       <div className="max-w-6xl mx-auto p-4 md:p-8">
         
-        {/* RANKING */}
         {activeTab === 'home' && (
           <section className="max-w-2xl mx-auto bg-neutral-900/40 border border-purple-500/20 rounded-3xl p-6 backdrop-blur-sm shadow-[0_0_30px_rgba(168,85,247,0.1)]">
              <h2 className="text-4xl font-black text-center mb-8 text-white drop-shadow-lg">🏆 Ranking Oficial</h2>
@@ -246,7 +267,6 @@ export default function Home() {
           </section>
         )}
 
-        {/* PACHANGA */}
         {activeTab === 'pachanga' && (
           <section className="max-w-3xl mx-auto bg-neutral-900/40 border border-green-500/20 rounded-3xl p-6 backdrop-blur-sm shadow-[0_0_30px_rgba(34,197,94,0.1)]">
              <h2 className="text-3xl font-black text-green-400 mb-6 drop-shadow-md">⚽ Generador de Equipos</h2>
@@ -278,26 +298,22 @@ export default function Home() {
           </section>
         )}
 
-        {/* FIFA */}
         {activeTab === 'fifa' && (
           <section className="animate-in fade-in duration-500">
              <div className="bg-neutral-900/40 p-6 rounded-3xl border border-blue-500/20 mb-8 max-w-2xl mx-auto backdrop-blur-sm shadow-[0_0_30px_rgba(59,130,246,0.1)]">
                 <h2 className="text-2xl font-black text-blue-400 mb-4 drop-shadow-md">🏆 Nuevo Torneo</h2>
                 <textarea 
                     className="w-full h-32 bg-black/40 border border-gray-700 rounded-xl p-4 text-base text-white resize-none mb-4 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition placeholder-gray-600" 
-                    placeholder="Pega la lista de jugadores aquí..." 
+                    placeholder="Pega la lista de jugadores aquí (Enter para saltar)..." 
                     value={fifaInput} 
                     onChange={e=>setFifaInput(e.target.value)}
                 ></textarea>
                 
-                {/* BOTÓN ÚNICO AUTOMÁTICO */}
                 <button onClick={handleCrearTorneoAuto} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black py-4 rounded-xl border-b-4 border-blue-800 active:border-0 active:translate-y-1 transition shadow-lg shadow-blue-900/20 flex items-center justify-center gap-2">
-                    <span>⚡ GENERAR CUADRO AUTOMÁTICO</span>
+                    <span>⚡ CREAR CUADRO INTELIGENTE</span>
                 </button>
-                <p className="text-xs text-gray-500 mt-3 text-center">*Detecta automáticamente si es torneo de 4 o de 8. Si faltan jugadores, añade Bots.</p>
              </div>
 
-             {/* PALIZA CARD */}
              {mayorPaliza && (
                  <div className="max-w-xl mx-auto mb-8 bg-gradient-to-r from-pink-950/60 to-red-950/60 border border-pink-500/30 p-4 rounded-2xl flex items-center justify-between animate-pulse shadow-[0_0_20px_rgba(236,72,153,0.2)]">
                      <div className="flex items-center gap-4">
@@ -315,10 +331,9 @@ export default function Home() {
                  </div>
              )}
 
-             {/* CUADRO */}
              {fifaMatches.length > 0 && (
                 <div className="w-full overflow-x-auto pb-10">
-                     {/* TORNEO PEQUEÑO (4) */}
+                     {/* TORNEO PEQUEÑO */}
                      {fifaMatches.length === 3 && (
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center max-w-4xl mx-auto">
                              <div className="flex flex-col gap-6">
@@ -335,26 +350,22 @@ export default function Home() {
                          </div>
                      )}
 
-                     {/* TORNEO GRANDE (8) */}
+                     {/* TORNEO GRANDE */}
                      {fifaMatches.length === 7 && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-12 items-center min-w-[800px] md:min-w-0">
-                            {/* COLUMNA 1 */}
                             <div className="flex flex-col justify-around gap-4 h-full">
                                 <h3 className="text-blue-500 text-xs font-bold uppercase text-center mb-2 tracking-widest md:hidden">Cuartos</h3>
                                 {[0,1,2,3].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}
                             </div>
                             
-                            {/* COLUMNA 2 */}
                             <div className="flex flex-col justify-center gap-16 h-full relative">
                                 <h3 className="text-blue-500 text-xs font-bold uppercase text-center mb-2 tracking-widest md:hidden">Semis</h3>
                                 <div className="hidden md:block absolute left-0 top-1/4 w-4 h-1/2 border-l-2 border-t-2 border-b-2 border-white/10 rounded-l-xl -translate-x-full"></div>
                                 <div className="hidden md:block absolute left-0 bottom-1/4 w-4 h-1/2 border-l-2 border-t-2 border-b-2 border-white/10 rounded-l-xl -translate-x-full translate-y-full"></div>
-                                
                                 <MatchCard m={fifaMatches[4]} onFinish={finalizarPartido} />
                                 <MatchCard m={fifaMatches[5]} onFinish={finalizarPartido} />
                             </div>
 
-                            {/* COLUMNA 3 */}
                             <div className="flex flex-col items-center justify-center">
                                 <h3 className="text-yellow-500 text-xs font-bold uppercase text-center mb-4 tracking-widest md:hidden">FINAL</h3>
                                 <div className="scale-110 z-10 p-1 bg-gradient-to-br from-yellow-600 to-orange-600 rounded-xl shadow-[0_0_40px_rgba(234,179,8,0.3)]">
@@ -370,7 +381,6 @@ export default function Home() {
           </section>
         )}
 
-        {/* RULETA */}
         {activeTab === 'castigos' && (
            <section className="max-w-md mx-auto text-center mt-10 animate-in zoom-in duration-300">
               <div className="bg-black/60 border-2 border-red-600 p-8 rounded-3xl shadow-[0_0_50px_rgba(220,38,38,0.5)] mb-8 relative overflow-hidden">
@@ -389,7 +399,6 @@ export default function Home() {
   );
 }
 
-// MATCHCARD (Diseño Neon Restaurado)
 function MatchCard({ m, onFinish, isFinal }: { m?: Match, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean }) {
     const [s1, setS1] = useState("");
     const [s2, setS2] = useState("");
@@ -402,24 +411,34 @@ function MatchCard({ m, onFinish, isFinal }: { m?: Match, onFinish: (id: number,
     };
 
     const isWaiting = m.p1 === "Esperando..." || m.p2 === "Esperando...";
+    const isBye = m.isBye;
+
+    if (isBye) {
+        return (
+            <div className="relative p-3 rounded-xl border border-white/5 bg-neutral-900/30 w-full min-w-[200px] opacity-70">
+                 <div className="absolute -top-2.5 left-3 px-2 py-0.5 text-[9px] uppercase font-black bg-gray-800 text-gray-500 rounded border border-gray-700">
+                    {m.round === 'Q' ? 'Cuartos' : 'Semi'}
+                </div>
+                <div className="text-center py-2">
+                    <p className="text-green-500 font-bold mb-1">✅ {m.winner}</p>
+                    <p className="text-[10px] text-gray-500 uppercase tracking-widest">Pasa de ronda directo</p>
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className={`relative p-3 rounded-xl border-t border-l border-white/10 shadow-xl w-full min-w-[200px] transition-all duration-300 backdrop-blur-md ${m.winner ? 'bg-blue-900/20 border-blue-500/50 shadow-blue-500/10' : 'bg-neutral-900/60 border-gray-800'}`}>
-            
-            {/* ETIQUETA RONDA */}
             <div className={`absolute -top-2.5 left-3 px-2 py-0.5 text-[9px] uppercase font-black tracking-wider rounded border ${isFinal ? 'bg-yellow-500 text-black border-yellow-400' : 'bg-black text-gray-500 border-gray-800'}`}>
                 {m.round === 'Q' ? 'Cuartos' : m.round === 'S' ? 'Semi' : 'FINAL'}
             </div>
-
             {m.winner ? (
-                // RESULTADO FINAL
                 <div className="flex justify-between items-center gap-2 pt-1">
                     <span className={`text-xs font-bold w-1/3 truncate text-right ${m.winner===m.p1 ? 'text-green-400 drop-shadow-glow' : 'text-gray-500 line-through'}`}>{m.p1}</span>
                     <div className="bg-black/60 px-2 py-1 rounded text-sm font-black text-white border border-white/10 shadow-inner">{m.score1}-{m.score2}</div>
                     <span className={`text-xs font-bold w-1/3 truncate text-left ${m.winner===m.p2 ? 'text-green-400 drop-shadow-glow' : 'text-gray-500 line-through'}`}>{m.p2}</span>
                 </div>
             ) : (
-                // INPUTS JUEGO
                 <div className="flex flex-col gap-2 mt-1">
                     <div className="flex justify-between items-center gap-2">
                         <span className="text-xs font-bold w-16 truncate text-right text-gray-300">{m.p1}</span>
