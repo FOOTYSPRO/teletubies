@@ -37,7 +37,7 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [mayorPaliza, setMayorPaliza] = useState<{winner: string, loser: string, diff: number, result: string} | null>(null);
   
-  // CASTIGOS
+  // CASTIGOS & DJ
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
   const [isSpinning, setIsSpinning] = useState(false);
   const [showDJ, setShowDJ] = useState(false);
@@ -47,9 +47,46 @@ export default function Home() {
   const [timerActive, setTimerActive] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // --- LISTAS ---
-  const TEAMS_REAL = ["Man. City 🔵", "Real Madrid 👑", "Bayern Múnich 🔴", "Liverpool 🔴", "Arsenal 🔴", "Inter Milán ⚫🔵", "PSG 🗼", "FC Barcelona 🔵🔴", "Atlético Madrid 🔴⚪", "B. Leverkusen ⚫🔴", "AC Milan ⚫🔴", "Juventus ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Tottenham ⚪"];
-  const TEAMS_FUNNY = ["Aston Birra", "Nottingham Prisa", "Inter de Mitente", "Vodka Juniors", "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo", "Schalke Te Meto", "Abuelos FC", "Patético de Madrid", "Bajern de Munich", "Real Suciedad", "Olimpique de Marsopa", "West Jamón", "Levante en Barra"];
+  // --- LISTAS MASIVAS (BIG 5 LEAGUES) ---
+  const TEAMS_REAL = [
+    // PREMIER LEAGUE
+    "Man. City 🔵", "Arsenal 🔴", "Liverpool 🔴", "Aston Villa 🦁", "Tottenham ⚪", "Chelsea 🔵",
+    "Newcastle ⚫⚪", "Man. Utd 🔴", "West Ham ⚒️", "Crystal Palace 🦅", "Brighton 🔵⚪",
+    "Bournemouth 🍒", "Fulham ⚪⚫", "Wolves 🐺", "Everton 🔵", "Brentford 🐝",
+    "Nottingham Forest 🌳", "Leicester 🦊", "Southampton 😇", "Ipswich 🚜",
+
+    // LA LIGA
+    "Real Madrid 👑", "FC Barcelona 🔵🔴", "Girona 🔴⚪", "Atlético Madrid 🔴⚪", "Athletic Club 🦁",
+    "Real Sociedad 🔵⚪", "Real Betis 🟢⚪", "Villarreal 🟡", "Valencia 🦇", "Alavés 🔵⚪",
+    "Osasuna 🔴", "Getafe 🔵", "Celta Vigo 💠", "Sevilla 🔴⚪", "Mallorca 👹",
+    "Rayo Vallecano ⚡", "Las Palmas 🌴", "Leganés 🥒", "Valladolid 💜", "Espanyol 🦜",
+
+    // SERIE A
+    "Inter Milán ⚫🔵", "AC Milan ⚫🔴", "Juventus ⚫⚪", "Atalanta ⚫🔵", "Bologna 🔴🔵",
+    "AS Roma 🟠🔴", "Lazio 🦅", "Fiorentina 🟣", "Napoli 🔵", "Torino 🐂",
+    "Genoa 🔴🔵", "Monza 🔴⚪", "Hellas Verona 🟡🔵", "Lecce 🟡🔴", "Udinese ⚫⚪",
+    "Cagliari 🔴🔵", "Empoli 🔵", "Parma 🟡🔵", "Como 🔵", "Venezia 🟠⚫🟢",
+
+    // BUNDESLIGA
+    "B. Leverkusen ⚫🔴", "Stuttgart ⚪🔴", "Bayern Múnich 🔴", "RB Leipzig ⚪🔴", "Dortmund 🟡⚫",
+    "E. Frankfurt 🦅", "Hoffenheim 🔵", "Heidenheim 🔴🔵", "Werder Bremen 🟢", "Freiburg 🦅",
+    "Augsburg ⚪❤️", "Wolfsburg 🟢", "Mainz 05 🔴", "M'gladbach ⚫⚪", "Union Berlin 🔴",
+    "Bochum 🔵", "St. Pauli ☠️", "Holstein Kiel 🔵⚪",
+
+    // LIGUE 1
+    "PSG 🗼", "Monaco 🔴⚪", "Brest 🔴", "Lille 🐶", "Nice 🦅",
+    "Lyon 🦁", "Lens 🔴🟡", "Marseille 🔵⚪", "Reims 🔴", "Rennes 🔴⚫",
+    "Toulouse 🟣", "Montpellier 🟠🔵", "Strasbourg 🔵", "Nantes 🔰", "Le Havre 🔵",
+    "Auxerre 🔵⚪", "Angers ⚫⚪", "Saint-Étienne 🟢"
+  ];
+
+  const TEAMS_FUNNY = [
+    "Aston Birra", "Nottingham Prisa", "Inter de Mitente", "Vodka Juniors",
+    "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo",
+    "Schalke Te Meto", "Abuelos FC", "Patético de Madrid", "Bajern de Munich",
+    "Real Suciedad", "Olimpique de Marsopa", "West Jamón", "Levante en Barra",
+    "Borussia de la Birra", "Peshownal", "Estrella Coja", "Fenerbache el Vaso"
+  ];
   
   const listaSoft = ["Haz 10 flexiones 💪", "Manda un audio cantando 🎤", "Baila sin música 30seg 💃", "No puedes hablar 1 ronda 🤐", "Comentarista next game 🎙️", "Enseña última foto carrete 📱", "Sirve bebida a todos 🥤"];
   const listaChupitos = ["🥃 1 Chupito", "🥃🥃 2 Chupitos", "🌊 ¡Cascada!", "🤝 Elige compañero", "🚫 Te libras", "💀 CHUPITO MORTAL"];
@@ -137,7 +174,7 @@ export default function Home() {
         while (nombres.length < size) nombres.push(BYE_NAME);
         
         const shuffledPlayers = [...nombres].sort(() => Math.random() - 0.5);
-        const shuffledTeams = [...TEAMS_REAL].sort(() => Math.random() - 0.5);
+        const shuffledTeams = [...TEAMS_REAL].sort(() => Math.random() - 0.5); // Barajamos la lista gigante
         const shuffledClubs = [...TEAMS_FUNNY].sort(() => Math.random() - 0.5);
 
         const getP = (idx: number) => {
