@@ -12,8 +12,8 @@ type Match = {
   id: number; 
   p1: string; 
   p2: string; 
-  score1?: number; // Goles P1
-  score2?: number; // Goles P2
+  score1?: number; 
+  score2?: number; 
   winner?: string; 
   round: 'Q' | 'S' | 'F'; 
 };
@@ -23,27 +23,20 @@ type Tab = 'home' | 'pachanga' | 'fifa' | 'castigos';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
-
-  // INPUTS GLOBALES
   const [pachangaInput, setPachangaInput] = useState("");
   const [fifaInput, setFifaInput] = useState("");
-  
-  // DATOS FIREBASE
   const [equipoA, setEquipoA] = useState<string[]>([]);
   const [equipoB, setEquipoB] = useState<string[]>([]);
   const [fifaMatches, setFifaMatches] = useState<Match[]>([]);
   const [ranking, setRanking] = useState<Player[]>([]);
   const [mayorPaliza, setMayorPaliza] = useState<{winner: string, loser: string, diff: number, result: string} | null>(null);
-  
-  // RULETA
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
   const [isSpinning, setIsSpinning] = useState(false);
 
-  // LISTAS
+  // Listas
   const listaSoft = ["Haz 10 flexiones 💪", "Manda un audio cantando 🎤", "Baila sin música 30seg 💃", "No puedes hablar 1 ronda 🤐", "Comentarista next game 🎙️", "Enseña última foto carrete 📱", "Sirve bebida a todos 🥤"];
   const listaChupitos = ["🥃 1 Chupito", "🥃🥃 2 Chupitos", "🌊 ¡Cascada!", "🤝 Elige compañero", "🚫 Te libras", "💀 CHUPITO MORTAL"];
 
-  // --- EFECTOS ---
   const lanzarFiesta = () => {
     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#a864fd', '#29cdff', '#78ff44', '#ff718d', '#fdff6a'] });
     const audio = new Audio("/gol.mp3");
@@ -51,20 +44,16 @@ export default function Home() {
     audio.play().catch(() => {});
   };
 
-  // --- LISTENERS ---
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, "sala", "principal"), (doc) => {
       if (doc.exists()) {
         const data = doc.data();
         setEquipoA(data.equipoA || []);
         setEquipoB(data.equipoB || []);
-        setFifaMatches(data.fifaMatches || []);
+        // PROTECCIÓN: Si los datos no son un array válido, ponemos array vacío
+        setFifaMatches(Array.isArray(data.fifaMatches) ? data.fifaMatches : []);
         if (data.ultimoCastigo) setResultadoRuleta(data.ultimoCastigo);
-        
-        // Calcular PALIZA automáticamente
-        if (data.fifaMatches) {
-            calcularPaliza(data.fifaMatches);
-        }
+        if (data.fifaMatches && Array.isArray(data.fifaMatches)) calcularPaliza(data.fifaMatches);
       }
     });
     return () => unsubscribe();
@@ -78,65 +67,52 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  // --- LÓGICA PALIZA ---
   const calcularPaliza = (matches: Match[]) => {
       let maxDiff = 0;
       let palizaData = null;
-
       matches.forEach(m => {
-          if (m.winner && m.score1 !== undefined && m.score2 !== undefined) {
+          if (m && m.winner && m.score1 !== undefined && m.score2 !== undefined) {
               const diff = Math.abs(m.score1 - m.score2);
               if (diff > maxDiff) {
                   maxDiff = diff;
                   const isP1Winner = m.score1 > m.score2;
-                  palizaData = {
-                      winner: isP1Winner ? m.p1 : m.p2,
-                      loser: isP1Winner ? m.p2 : m.p1,
-                      diff: diff,
-                      result: `${m.score1}-${m.score2}`
-                  };
+                  palizaData = { winner: isP1Winner ? m.p1 : m.p2, loser: isP1Winner ? m.p2 : m.p1, diff: diff, result: `${m.score1}-${m.score2}` };
               }
           }
       });
       setMayorPaliza(palizaData);
   };
 
-  // --- LÓGICA TORNEO ---
   const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
-    if (s1 === s2) return alert("❌ En eliminatorias no puede haber empate. Sumad los penaltis al marcador.");
-    
-    // Determinar ganador
-    const currentMatch = fifaMatches.find(m => m.id === matchId);
+    if (s1 === s2) return alert("❌ En eliminatorias no puede haber empate.");
+    const currentMatch = fifaMatches.find(m => m && m.id === matchId);
     if (!currentMatch) return;
-
     const winner = s1 > s2 ? currentMatch.p1 : currentMatch.p2;
 
     try {
-      // 1. Sumar puntos al Ranking (si no es bot)
       if(!winner.includes("Bot") && winner !== "Esperando...") {
         const playerRef = doc(db, "ranking", winner);
         await setDoc(playerRef, { puntos: increment(3), victorias: increment(1) }, { merge: true });
       }
       
-      // 2. Actualizar Bracket y avanzar ronda
       let nuevosPartidos = [...fifaMatches];
-      
-      // Guardar resultado en el partido actual
+      // Actualizar partido actual
       nuevosPartidos = nuevosPartidos.map(m => m.id === matchId ? { ...m, score1: s1, score2: s2, winner: winner } : m);
 
-      // AVANCE DE RONDA
-      if (matchId === 0) nuevosPartidos[4].p1 = winner;
-      if (matchId === 1) nuevosPartidos[4].p2 = winner;
-      if (matchId === 2) nuevosPartidos[5].p1 = winner;
-      if (matchId === 3) nuevosPartidos[5].p2 = winner;
-      if (matchId === 4) nuevosPartidos[6].p1 = winner;
-      if (matchId === 5) nuevosPartidos[6].p2 = winner;
+      // Lógica de avance (Protegida)
+      // Solo intentamos escribir en la siguiente ronda si el array tiene el tamaño correcto
+      if (nuevosPartidos.length >= 7) {
+          if (matchId === 0) nuevosPartidos[4].p1 = winner;
+          if (matchId === 1) nuevosPartidos[4].p2 = winner;
+          if (matchId === 2) nuevosPartidos[5].p1 = winner;
+          if (matchId === 3) nuevosPartidos[5].p2 = winner;
+          if (matchId === 4) nuevosPartidos[6].p1 = winner;
+          if (matchId === 5) nuevosPartidos[6].p2 = winner;
+      }
 
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: nuevosPartidos }, { merge: true });
-      
       if (matchId === 6) confetti({ particleCount: 500, spread: 100 });
       else lanzarFiesta();
-
     } catch (e) { console.error(e); }
   };
 
@@ -160,7 +136,6 @@ export default function Home() {
     setFifaInput("");
   };
 
-  // --- OTRAS FUNCIONES ---
   const girarRuleta = async (tipo: 'soft' | 'chupito') => {
     setIsSpinning(true);
     const lista = tipo === 'soft' ? listaSoft : listaChupitos;
@@ -197,7 +172,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-neutral-950 text-white font-sans pb-24 overflow-x-hidden select-none">
-      {/* HEADER */}
       <header className="bg-neutral-900/80 backdrop-blur-md sticky top-0 z-50 border-b border-white/10 p-4">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
             <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 uppercase tracking-tighter cursor-pointer" onClick={() => setActiveTab('home')}>
@@ -215,8 +189,6 @@ export default function Home() {
       </header>
 
       <div className="max-w-6xl mx-auto p-4">
-        
-        {/* HOME */}
         {activeTab === 'home' && (
           <section className="max-w-2xl mx-auto bg-gradient-to-b from-purple-900/10 to-neutral-900 border border-purple-500/20 rounded-3xl p-6">
              <h2 className="text-3xl font-black text-center mb-6">🏆 Ranking Oficial</h2>
@@ -235,7 +207,6 @@ export default function Home() {
           </section>
         )}
 
-        {/* PACHANGA */}
         {activeTab === 'pachanga' && (
           <section className="max-w-2xl mx-auto bg-neutral-900/50 border border-green-500/20 rounded-3xl p-6">
              <h2 className="text-2xl font-black text-green-400 mb-4">⚽ Equipos</h2>
@@ -252,16 +223,13 @@ export default function Home() {
           </section>
         )}
 
-        {/* FIFA BRACKET */}
         {activeTab === 'fifa' && (
           <section>
-             {/* HEADER FIFA */}
              <div className="bg-neutral-900/50 p-4 rounded-2xl border border-blue-500/20 mb-8 max-w-xl mx-auto flex gap-2">
                 <input className="flex-1 bg-black/50 border border-gray-700 rounded-xl px-4" placeholder="8 Jugadores..." value={fifaInput} onChange={e=>setFifaInput(e.target.value)}/>
                 <button onClick={handleTorneoFifa} className="bg-blue-600 font-bold px-4 rounded-xl">Crear</button>
              </div>
 
-             {/* HUMILIATION CARD (PALIZA) */}
              {mayorPaliza && (
                  <div className="max-w-xl mx-auto mb-8 bg-gradient-to-r from-pink-900/40 to-red-900/40 border border-pink-500/30 p-4 rounded-2xl flex items-center justify-between animate-pulse">
                      <div className="flex items-center gap-3">
@@ -279,14 +247,12 @@ export default function Home() {
                  </div>
              )}
 
-             {/* EL CUADRO */}
-             {fifaMatches.length > 0 && (
+             {/* SOLO RENDERIZA SI HAY 7 PARTIDOS */}
+             {fifaMatches.length >= 7 && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8 items-center min-h-[500px]">
-                    {/* Q */}
                     <div className="flex flex-col justify-around gap-4 h-full">
                         {[0,1,2,3].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}
                     </div>
-                    {/* S + F */}
                     <div className="flex flex-col justify-center gap-12 h-full">
                         <div className="pl-8 md:pl-0"><MatchCard m={fifaMatches[4]} onFinish={finalizarPartido} /></div>
                         <div className="scale-110 z-10 border-2 border-yellow-500/50 rounded-lg shadow-[0_0_20px_rgba(234,179,8,0.3)] bg-black">
@@ -300,7 +266,6 @@ export default function Home() {
           </section>
         )}
 
-        {/* RULETA */}
         {activeTab === 'castigos' && (
            <section className="max-w-md mx-auto text-center mt-10">
               <div className="bg-black/80 border-2 border-red-600 p-8 rounded-3xl shadow-[0_0_40px_rgba(220,38,38,0.4)] mb-8">
@@ -318,10 +283,13 @@ export default function Home() {
   );
 }
 
-// COMPONENTE TARJETA DE PARTIDO (CON INPUTS)
-function MatchCard({ m, onFinish }: { m: Match, onFinish: (id: number, s1: number, s2: number) => void }) {
+// MATCHCARD PROTEGIDO
+function MatchCard({ m, onFinish }: { m?: Match, onFinish: (id: number, s1: number, s2: number) => void }) {
     const [s1, setS1] = useState("");
     const [s2, setS2] = useState("");
+
+    // Si los datos están corruptos, mostramos un hueco vacío en vez de romper la web
+    if (!m) return <div className="bg-gray-900/50 p-2 rounded border border-gray-800 h-16 animate-pulse"></div>;
 
     const handleConfirm = () => {
         if (s1 === "" || s2 === "") return;
@@ -337,14 +305,12 @@ function MatchCard({ m, onFinish }: { m: Match, onFinish: (id: number, s1: numbe
             </div>
 
             {m.winner ? (
-                // MODO MOSTRAR RESULTADO
                 <div className="flex justify-between items-center px-2 py-2">
                     <span className={`text-xs font-bold w-1/3 truncate text-right ${m.winner===m.p1 ? 'text-green-400' : 'text-gray-400'}`}>{m.p1}</span>
                     <div className="bg-black/50 px-2 py-1 rounded text-xs font-black text-white">{m.score1} - {m.score2}</div>
                     <span className={`text-xs font-bold w-1/3 truncate text-left ${m.winner===m.p2 ? 'text-green-400' : 'text-gray-400'}`}>{m.p2}</span>
                 </div>
             ) : (
-                // MODO JUGANDO (INPUTS)
                 <div className="flex flex-col gap-2 mt-2">
                     <div className="flex justify-between items-center gap-2">
                         <span className="text-xs font-bold w-16 truncate text-right text-gray-300">{m.p1}</span>
