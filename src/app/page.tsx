@@ -7,62 +7,64 @@ import {
 } from "firebase/firestore";
 import confetti from "canvas-confetti";
 
-// Tipos
-type Match = { p1: string; p2: string; winner?: string; id: number };
+// --- TIPOS ---
+type Match = { 
+  id: number; 
+  p1: string; 
+  p2: string; 
+  score1?: number; // Goles P1
+  score2?: number; // Goles P2
+  winner?: string; 
+  round: 'Q' | 'S' | 'F'; 
+};
+
 type Player = { nombre: string; puntos: number; victorias: number };
-// 👇 Añadimos 'castigos' a las pestañas
 type Tab = 'home' | 'pachanga' | 'fifa' | 'castigos';
 
 export default function Home() {
-  // --- NAVEGACIÓN ---
   const [activeTab, setActiveTab] = useState<Tab>('home');
 
-  // --- ESTADOS ---
+  // INPUTS GLOBALES
   const [pachangaInput, setPachangaInput] = useState("");
   const [fifaInput, setFifaInput] = useState("");
   
-  // --- DATOS FIREBASE ---
+  // DATOS FIREBASE
   const [equipoA, setEquipoA] = useState<string[]>([]);
   const [equipoB, setEquipoB] = useState<string[]>([]);
   const [fifaMatches, setFifaMatches] = useState<Match[]>([]);
   const [ranking, setRanking] = useState<Player[]>([]);
+  const [mayorPaliza, setMayorPaliza] = useState<{winner: string, loser: string, diff: number, result: string} | null>(null);
   
-  // Nuevo estado para sincronizar la ruleta
+  // RULETA
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
   const [isSpinning, setIsSpinning] = useState(false);
 
-  // --- LISTAS DE CASTIGOS ---
-  const listaSoft = [
-    "Haz 10 flexiones 💪", "Manda un audio cantando 🎤", "Baila sin música 30seg 💃", 
-    "No puedes hablar 1 ronda 🤐", "Haz de comentarista el próximo partido 🎙️", 
-    "Deja que lean tu último WhatsApp 📱", "Sirve la bebida a todos 🥤"
-  ];
-  
-  const listaChupitos = [
-    "🥃 1 Chupito para el perdedor", "🥃🥃 2 Chupitos (Castigo Doble)", 
-    "🌊 ¡Cascada! Todos beben", "🤝 Elige compañero de chupito", 
-    "🚫 Te libras (Nadie bebe)", "💀 CHUPITO DE LA MUERTE (Mezcla todo)"
-  ];
+  // LISTAS
+  const listaSoft = ["Haz 10 flexiones 💪", "Manda un audio cantando 🎤", "Baila sin música 30seg 💃", "No puedes hablar 1 ronda 🤐", "Comentarista next game 🎙️", "Enseña última foto carrete 📱", "Sirve bebida a todos 🥤"];
+  const listaChupitos = ["🥃 1 Chupito", "🥃🥃 2 Chupitos", "🌊 ¡Cascada!", "🤝 Elige compañero", "🚫 Te libras", "💀 CHUPITO MORTAL"];
 
   // --- EFECTOS ---
   const lanzarFiesta = () => {
     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#a864fd', '#29cdff', '#78ff44', '#ff718d', '#fdff6a'] });
-    const audio = new Audio("/gol.mp3"); // Asegúrate de tener este archivo o cámbialo
+    const audio = new Audio("/gol.mp3");
     audio.volume = 0.5;
     audio.play().catch(() => {});
   };
 
-  // --- CONEXIONES FIREBASE ---
+  // --- LISTENERS ---
   useEffect(() => {
-    // Escuchar Sala Principal y CASTIGOS
     const unsubscribe = onSnapshot(doc(db, "sala", "principal"), (doc) => {
       if (doc.exists()) {
         const data = doc.data();
         setEquipoA(data.equipoA || []);
         setEquipoB(data.equipoB || []);
         setFifaMatches(data.fifaMatches || []);
-        // Sincronizar ruleta si cambia en la nube
         if (data.ultimoCastigo) setResultadoRuleta(data.ultimoCastigo);
+        
+        // Calcular PALIZA automáticamente
+        if (data.fifaMatches) {
+            calcularPaliza(data.fifaMatches);
+        }
       }
     });
     return () => unsubscribe();
@@ -71,76 +73,71 @@ export default function Home() {
   useEffect(() => {
     const q = query(collection(db, "ranking"), orderBy("puntos", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const rankingData = snapshot.docs.map(doc => ({ nombre: doc.id, ...doc.data() })) as Player[];
-      setRanking(rankingData);
+      setRanking(snapshot.docs.map(doc => ({ nombre: doc.id, ...doc.data() })) as Player[]);
     });
     return () => unsubscribe();
   }, []);
 
-  // --- FUNCIONES ---
-  const guardarEnNube = async (datos: any) => {
-    await setDoc(doc(db, "sala", "principal"), datos, { merge: true });
-    // Solo lanzamos fiesta si no es un castigo (para los castigos ya hay animación propia)
-    if (!datos.ultimoCastigo) lanzarFiesta();
+  // --- LÓGICA PALIZA ---
+  const calcularPaliza = (matches: Match[]) => {
+      let maxDiff = 0;
+      let palizaData = null;
+
+      matches.forEach(m => {
+          if (m.winner && m.score1 !== undefined && m.score2 !== undefined) {
+              const diff = Math.abs(m.score1 - m.score2);
+              if (diff > maxDiff) {
+                  maxDiff = diff;
+                  const isP1Winner = m.score1 > m.score2;
+                  palizaData = {
+                      winner: isP1Winner ? m.p1 : m.p2,
+                      loser: isP1Winner ? m.p2 : m.p1,
+                      diff: diff,
+                      result: `${m.score1}-${m.score2}`
+                  };
+              }
+          }
+      });
+      setMayorPaliza(palizaData);
   };
 
-  const registrarVictoria = async (jugador: string, matchId: number) => {
-    if(jugador.includes("Bot")) return;
-    try {
-      const playerRef = doc(db, "ranking", jugador);
-      await setDoc(playerRef, { puntos: increment(3), victorias: increment(1) }, { merge: true });
-      const nuevosPartidos = fifaMatches.map(m => m.id === matchId ? { ...m, winner: jugador } : m);
-      await setDoc(doc(db, "sala", "principal"), { fifaMatches: nuevosPartidos }, { merge: true });
-      lanzarFiesta();
-    } catch (e) { console.error(e); }
-  };
-
-  // 🎰 LÓGICA DE LA RULETA (Con animación)
-  const girarRuleta = async (tipo: 'soft' | 'chupito') => {
-    setIsSpinning(true);
-    const lista = tipo === 'soft' ? listaSoft : listaChupitos;
+  // --- LÓGICA TORNEO ---
+  const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
+    if (s1 === s2) return alert("❌ En eliminatorias no puede haber empate. Sumad los penaltis al marcador.");
     
-    // Animación visual local (girando...)
-    let i = 0;
-    const intervalo = setInterval(() => {
-        setResultadoRuleta(lista[i % lista.length]);
-        i++;
-    }, 80);
+    // Determinar ganador
+    const currentMatch = fifaMatches.find(m => m.id === matchId);
+    if (!currentMatch) return;
 
-    // Parar y guardar en Firebase
-    setTimeout(async () => {
-        clearInterval(intervalo);
-        const final = lista[Math.floor(Math.random() * lista.length)];
-        setResultadoRuleta(final);
-        setIsSpinning(false);
-        // Guardamos para que lo vean todos
-        await setDoc(doc(db, "sala", "principal"), { ultimoCastigo: final }, { merge: true });
-        
-        // Efecto de sonido de "mala suerte" si es chupito
-        if(tipo === 'chupito') confetti({ particleCount: 50, colors: ['#ff0000'] }); 
-    }, 2000);
-  };
+    const winner = s1 > s2 ? currentMatch.p1 : currentMatch.p2;
 
-  const resetearTemporada = async () => {
-    if(!confirm("⚠️ ¿SEGURO? Esto borrará TODOS los puntos y el ranking a 0.")) return;
-    const batch = writeBatch(db);
-    const q = query(collection(db, "ranking"));
-    const snapshot = await getDocs(q);
-    snapshot.forEach((doc) => batch.delete(doc.ref));
-    const salaRef = doc(db, "sala", "principal");
-    batch.set(salaRef, { equipoA: [], equipoB: [], fifaMatches: [], ultimoCastigo: "☠️ Esperando víctima..." });
-    await batch.commit();
-    alert("Temporada reiniciada. 🏁");
-  };
+    try {
+      // 1. Sumar puntos al Ranking (si no es bot)
+      if(!winner.includes("Bot") && winner !== "Esperando...") {
+        const playerRef = doc(db, "ranking", winner);
+        await setDoc(playerRef, { puntos: increment(3), victorias: increment(1) }, { merge: true });
+      }
+      
+      // 2. Actualizar Bracket y avanzar ronda
+      let nuevosPartidos = [...fifaMatches];
+      
+      // Guardar resultado en el partido actual
+      nuevosPartidos = nuevosPartidos.map(m => m.id === matchId ? { ...m, score1: s1, score2: s2, winner: winner } : m);
 
-  // --- GENERADORES ---
-  const handleSorteoPachanga = () => {
-    const nombres = pachangaInput.split(/[\n,]+/).map((n) => n.trim()).filter((n) => n);
-    if (nombres.length < 2) return alert("Mínimo 2 jugadores");
-    const shuffled = [...nombres].sort(() => Math.random() - 0.5);
-    const mid = Math.ceil(shuffled.length / 2);
-    guardarEnNube({ equipoA: shuffled.slice(0, mid), equipoB: shuffled.slice(mid) });
-    setPachangaInput(""); 
+      // AVANCE DE RONDA
+      if (matchId === 0) nuevosPartidos[4].p1 = winner;
+      if (matchId === 1) nuevosPartidos[4].p2 = winner;
+      if (matchId === 2) nuevosPartidos[5].p1 = winner;
+      if (matchId === 3) nuevosPartidos[5].p2 = winner;
+      if (matchId === 4) nuevosPartidos[6].p1 = winner;
+      if (matchId === 5) nuevosPartidos[6].p2 = winner;
+
+      await setDoc(doc(db, "sala", "principal"), { fifaMatches: nuevosPartidos }, { merge: true });
+      
+      if (matchId === 6) confetti({ particleCount: 500, spread: 100 });
+      else lanzarFiesta();
+
+    } catch (e) { console.error(e); }
   };
 
   const handleTorneoFifa = () => {
@@ -148,168 +145,221 @@ export default function Home() {
     while (nombres.length < 8) nombres.push(`Bot ${nombres.length + 1} 🤖`);
     if (nombres.length > 8) nombres = nombres.slice(0,8);
     const shuffled = [...nombres].sort(() => Math.random() - 0.5);
-    const matches: Match[] = [];
-    for (let i = 0; i < 8; i += 2) matches.push({ p1: shuffled[i], p2: shuffled[i + 1], id: i });
-    guardarEnNube({ fifaMatches: matches });
+    
+    const matches: Match[] = [
+        { id: 0, p1: shuffled[0], p2: shuffled[1], round: 'Q' },
+        { id: 1, p1: shuffled[2], p2: shuffled[3], round: 'Q' },
+        { id: 2, p1: shuffled[4], p2: shuffled[5], round: 'Q' },
+        { id: 3, p1: shuffled[6], p2: shuffled[7], round: 'Q' },
+        { id: 4, p1: "Esperando...", p2: "Esperando...", round: 'S' },
+        { id: 5, p1: "Esperando...", p2: "Esperando...", round: 'S' },
+        { id: 6, p1: "Esperando...", p2: "Esperando...", round: 'F' }
+    ];
+
+    setDoc(doc(db, "sala", "principal"), { fifaMatches: matches }, { merge: true });
     setFifaInput("");
   };
 
-  const BracketMatch = ({ match }: { match: Match }) => (
-    <div className={`relative p-2 rounded-lg border ${match.winner ? 'bg-blue-900/40 border-blue-500' : 'bg-neutral-800 border-neutral-700'} mb-4 shadow-lg`}>
-        {match.winner ? (
-           <div className="text-center text-sm font-bold text-blue-300 py-2">🎉 {match.winner} 🎉</div>
-        ) : (
-        <div className="flex flex-col gap-1">
-            <button onClick={() => registrarVictoria(match.p1, match.id)} className="w-full bg-neutral-900 hover:bg-blue-600 hover:text-white py-2 px-3 rounded text-xs font-bold transition text-left truncate border border-neutral-700">{match.p1}</button>
-            <button onClick={() => registrarVictoria(match.p2, match.id)} className="w-full bg-neutral-900 hover:bg-blue-600 hover:text-white py-2 px-3 rounded text-xs font-bold transition text-left truncate border border-neutral-700">{match.p2}</button>
-        </div>
-        )}
-    </div>
-  );
+  // --- OTRAS FUNCIONES ---
+  const girarRuleta = async (tipo: 'soft' | 'chupito') => {
+    setIsSpinning(true);
+    const lista = tipo === 'soft' ? listaSoft : listaChupitos;
+    let i = 0;
+    const intervalo = setInterval(() => { setResultadoRuleta(lista[i % lista.length]); i++; }, 80);
+    setTimeout(async () => {
+        clearInterval(intervalo);
+        const final = lista[Math.floor(Math.random() * lista.length)];
+        setResultadoRuleta(final);
+        setIsSpinning(false);
+        await setDoc(doc(db, "sala", "principal"), { ultimoCastigo: final }, { merge: true });
+        if(tipo === 'chupito') confetti({ particleCount: 50, colors: ['#ff0000'] }); 
+    }, 2000);
+  };
+
+  const handleSorteoPachanga = () => {
+    const nombres = pachangaInput.split(/[\n,]+/).map((n) => n.trim()).filter((n) => n);
+    if (nombres.length < 2) return alert("Mínimo 2");
+    const shuffled = [...nombres].sort(() => Math.random() - 0.5);
+    const mid = Math.ceil(shuffled.length / 2);
+    setDoc(doc(db, "sala", "principal"), { equipoA: shuffled.slice(0, mid), equipoB: shuffled.slice(mid) }, { merge: true });
+    setPachangaInput(""); 
+  };
+
+  const resetearTemporada = async () => {
+    if(!confirm("⚠️ ¿Resetear TODO?")) return;
+    const batch = writeBatch(db);
+    const snapshot = await getDocs(query(collection(db, "ranking")));
+    snapshot.forEach((doc) => batch.delete(doc.ref));
+    batch.set(doc(db, "sala", "principal"), { equipoA: [], equipoB: [], fifaMatches: [], ultimoCastigo: "..." });
+    await batch.commit();
+    alert("Temporada nueva 🏁");
+  };
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-white font-sans pb-24 overflow-x-hidden">
-      {/* HEADER & NAV */}
+    <main className="min-h-screen bg-neutral-950 text-white font-sans pb-24 overflow-x-hidden select-none">
+      {/* HEADER */}
       <header className="bg-neutral-900/80 backdrop-blur-md sticky top-0 z-50 border-b border-white/10 p-4">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
             <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 uppercase tracking-tighter cursor-pointer" onClick={() => setActiveTab('home')}>
                 Proyecto Teletubies
             </h1>
-            {/* MENÚ FLOTANTE EN MÓVIL / BARRA EN PC */}
-            <nav className="flex bg-black/60 p-1 rounded-2xl overflow-x-auto max-w-full gap-1">
-                <button onClick={() => setActiveTab('home')} className={`px-3 py-2 rounded-xl font-bold text-xs md:text-sm transition whitespace-nowrap ${activeTab === 'home' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>🏠 Inicio</button>
-                <button onClick={() => setActiveTab('pachanga')} className={`px-3 py-2 rounded-xl font-bold text-xs md:text-sm transition whitespace-nowrap ${activeTab === 'pachanga' ? 'bg-green-600 text-white' : 'text-gray-400'}`}>⚽ Pachanga</button>
-                <button onClick={() => setActiveTab('fifa')} className={`px-3 py-2 rounded-xl font-bold text-xs md:text-sm transition whitespace-nowrap ${activeTab === 'fifa' ? 'bg-blue-600 text-white' : 'text-gray-400'}`}>🎮 FIFA</button>
-                <button onClick={() => setActiveTab('castigos')} className={`px-3 py-2 rounded-xl font-bold text-xs md:text-sm transition whitespace-nowrap ${activeTab === 'castigos' ? 'bg-red-600 text-white animate-pulse' : 'text-gray-400'}`}>💀 Ruleta</button>
+            <nav className="flex bg-black/60 p-1 rounded-2xl gap-1 overflow-x-auto max-w-full">
+                {['home', 'pachanga', 'fifa', 'castigos'].map((tab) => (
+                    <button key={tab} onClick={() => setActiveTab(tab as Tab)} className={`px-3 py-2 rounded-xl font-bold text-xs uppercase transition ${activeTab === tab ? 'bg-white text-black' : 'text-gray-400'}`}>
+                        {tab}
+                    </button>
+                ))}
             </nav>
-             <button onClick={resetearTemporada} className="hidden md:block text-[10px] text-gray-600 hover:text-red-500 p-2 border border-gray-800 rounded">🔄 Reset</button>
+            <button onClick={resetearTemporada} className="hidden md:block text-[10px] text-gray-600 hover:text-red-500 border border-gray-800 rounded px-2 py-1">Reset</button>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto p-4 md:p-8">
-
-        {/* --- 1. INICIO (RANKING) --- */}
+      <div className="max-w-6xl mx-auto p-4">
+        
+        {/* HOME */}
         {activeTab === 'home' && (
-          <section className="animate-in fade-in duration-500 max-w-2xl mx-auto">
-             <div className="bg-gradient-to-b from-purple-900/20 to-neutral-900/40 p-6 rounded-3xl border border-purple-500/20 shadow-2xl">
-                 <div className="text-center mb-6">
-                    <h2 className="text-3xl font-black text-white mb-2">👑 Clasificación</h2>
-                    <p className="text-purple-300 text-sm">¿Quién manda aquí?</p>
-                 </div>
-                 <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
-                    {ranking.length === 0 ? (
-                        <div className="text-center py-10 text-gray-500"><p className="text-4xl mb-2">💤</p><p>Sin datos...</p></div>
-                    ) : (
-                        ranking.map((player, i) => (
-                        <div key={player.nombre} className="flex justify-between items-center bg-black/40 p-4 rounded-2xl border border-white/5 hover:bg-white/10 transition">
-                            <div className="flex items-center gap-4">
-                            <span className={`font-black text-xl w-6 text-center ${i===0 ? 'text-yellow-400' : 'text-gray-600'}`}>{i+1}</span>
-                            <div>
-                                <span className="font-bold text-lg block">{player.nombre}</span>
-                                <span className="text-xs text-gray-500">{player.victorias} Wins</span>
-                            </div>
-                            </div>
-                            <div className="bg-purple-600/20 px-3 py-1 rounded-lg border border-purple-500/30">
-                            <span className="font-black text-purple-300 text-xl">{player.puntos}</span> <span className="text-[10px] text-purple-400">PTS</span>
-                            </div>
+          <section className="max-w-2xl mx-auto bg-gradient-to-b from-purple-900/10 to-neutral-900 border border-purple-500/20 rounded-3xl p-6">
+             <h2 className="text-3xl font-black text-center mb-6">🏆 Ranking Oficial</h2>
+             <div className="space-y-2">
+                {ranking.map((p, i) => (
+                    <div key={p.nombre} className="flex justify-between items-center bg-black/40 p-3 rounded-xl border border-white/5">
+                        <div className="flex items-center gap-3">
+                            <span className={`font-black text-lg w-6 text-center ${i===0?'text-yellow-400':i===1?'text-gray-300':i===2?'text-orange-400':'text-gray-600'}`}>{i+1}</span>
+                            <span className="font-bold">{p.nombre}</span>
                         </div>
-                        ))
-                    )}
-                </div>
+                        <span className="font-black text-purple-400">{p.puntos} pts</span>
+                    </div>
+                ))}
+                {ranking.length === 0 && <p className="text-center text-gray-500">Sin datos aún...</p>}
              </div>
           </section>
         )}
 
-        {/* --- 2. PACHANGA --- */}
+        {/* PACHANGA */}
         {activeTab === 'pachanga' && (
-          <section className="animate-in slide-in-from-right duration-500 max-w-3xl mx-auto">
-            <div className="bg-neutral-900/50 p-6 rounded-3xl border border-green-800/30 shadow-xl backdrop-blur-sm">
-              <h2 className="text-2xl font-black text-green-400 mb-4">⚽ Equipos Random</h2>
-              <div className="flex flex-col md:flex-row gap-4 mb-6">
-                 <textarea className="flex-1 bg-black/40 border border-neutral-700 rounded-xl p-4 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition h-24" placeholder="Nombres..." value={pachangaInput} onChange={(e) => setPachangaInput(e.target.value)}></textarea>
-                 <button onClick={handleSorteoPachanga} className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-green-900/30">Mezclar!</button>
-              </div>
-              {(equipoA.length > 0) && (
-                <div className="grid grid-cols-2 gap-4 animate-in fade-in">
-                  <div className="bg-red-900/20 p-4 rounded-xl border border-red-500/30"><h3 className="font-black text-center text-red-400 mb-2">🔴 ROJOS</h3><ul className="text-center space-y-1">{equipoA.map((p, i) => <li key={i} className="text-sm text-gray-300">{p}</li>)}</ul></div>
-                  <div className="bg-blue-900/20 p-4 rounded-xl border border-blue-500/30"><h3 className="font-black text-center text-blue-400 mb-2">🔵 AZULES</h3><ul className="text-center space-y-1">{equipoB.map((p, i) => <li key={i} className="text-sm text-gray-300">{p}</li>)}</ul></div>
+          <section className="max-w-2xl mx-auto bg-neutral-900/50 border border-green-500/20 rounded-3xl p-6">
+             <h2 className="text-2xl font-black text-green-400 mb-4">⚽ Equipos</h2>
+             <div className="flex gap-2 mb-6">
+                <input className="flex-1 bg-black/40 border border-gray-700 rounded-xl px-4 text-sm" placeholder="Nombres..." value={pachangaInput} onChange={e=>setPachangaInput(e.target.value)}/>
+                <button onClick={handleSorteoPachanga} className="bg-green-600 font-bold px-4 rounded-xl text-sm">Sortear</button>
+             </div>
+             {equipoA.length > 0 && (
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-red-900/10 border border-red-500/30 p-4 rounded-xl"><h3 className="text-red-400 font-bold text-center mb-2">ROJOS</h3>{equipoA.map((p,i)=><div key={i} className="text-center text-sm">{p}</div>)}</div>
+                    <div className="bg-blue-900/10 border border-blue-500/30 p-4 rounded-xl"><h3 className="text-blue-400 font-bold text-center mb-2">AZULES</h3>{equipoB.map((p,i)=><div key={i} className="text-center text-sm">{p}</div>)}</div>
                 </div>
-              )}
-            </div>
+             )}
           </section>
         )}
 
-        {/* --- 3. FIFA BRACKET --- */}
+        {/* FIFA BRACKET */}
         {activeTab === 'fifa' && (
-          <section className="animate-in slide-in-from-right duration-500">
-             <div className="bg-neutral-900/50 p-6 mb-8 rounded-3xl border border-blue-800/30 shadow-xl backdrop-blur-sm max-w-3xl mx-auto">
-                <h2 className="text-xl font-black text-blue-400 mb-4">🎮 Torneo Express (8p)</h2>
-                <div className="flex gap-2">
-                    <input type="text" className="flex-1 bg-black/40 border border-neutral-700 rounded-xl px-4 text-white focus:outline-none focus:border-blue-500" placeholder="Nombres..." value={fifaInput} onChange={(e) => setFifaInput(e.target.value)}/>
-                    <button onClick={handleTorneoFifa} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-xl">Crear</button>
-                </div>
-            </div>
-            {fifaMatches.length > 0 && (
-                <div className="overflow-x-auto pb-10">
-                    <div className="grid grid-cols-5 gap-2 min-w-[700px] text-center items-center">
-                        <div className="space-y-6"><h3 className="text-blue-500 text-xs font-bold uppercase">Cuartos</h3>{fifaMatches.slice(0,2).map(match => <BracketMatch key={match.id} match={match} />)}</div>
-                        <div className="relative h-full border-r border-blue-500/20"></div>
-                        <div className="flex flex-col items-center justify-center space-y-4"><div className="text-4xl animate-bounce">🏆</div><div className="bg-neutral-800 p-4 rounded border border-yellow-500/30"><h3 className="text-yellow-400 font-black">WINNER</h3></div></div>
-                        <div className="relative h-full border-l border-blue-500/20"></div>
-                        <div className="space-y-6"><h3 className="text-blue-500 text-xs font-bold uppercase">Cuartos</h3>{fifaMatches.slice(2,4).map(match => <BracketMatch key={match.id} match={match} />)}</div>
+          <section>
+             {/* HEADER FIFA */}
+             <div className="bg-neutral-900/50 p-4 rounded-2xl border border-blue-500/20 mb-8 max-w-xl mx-auto flex gap-2">
+                <input className="flex-1 bg-black/50 border border-gray-700 rounded-xl px-4" placeholder="8 Jugadores..." value={fifaInput} onChange={e=>setFifaInput(e.target.value)}/>
+                <button onClick={handleTorneoFifa} className="bg-blue-600 font-bold px-4 rounded-xl">Crear</button>
+             </div>
+
+             {/* HUMILIATION CARD (PALIZA) */}
+             {mayorPaliza && (
+                 <div className="max-w-xl mx-auto mb-8 bg-gradient-to-r from-pink-900/40 to-red-900/40 border border-pink-500/30 p-4 rounded-2xl flex items-center justify-between animate-pulse">
+                     <div className="flex items-center gap-3">
+                         <div className="text-3xl">🤕</div>
+                         <div>
+                             <h3 className="text-pink-400 font-black text-xs uppercase tracking-widest">Mayor Paliza</h3>
+                             <p className="font-bold text-white text-sm">
+                                <span className="text-green-400">{mayorPaliza.winner}</span> humilló a <span className="text-red-400">{mayorPaliza.loser}</span>
+                             </p>
+                         </div>
+                     </div>
+                     <div className="bg-black/40 px-3 py-1 rounded-lg border border-pink-500/20">
+                         <span className="font-black text-xl text-pink-200">{mayorPaliza.result}</span>
+                     </div>
+                 </div>
+             )}
+
+             {/* EL CUADRO */}
+             {fifaMatches.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8 items-center min-h-[500px]">
+                    {/* Q */}
+                    <div className="flex flex-col justify-around gap-4 h-full">
+                        {[0,1,2,3].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}
+                    </div>
+                    {/* S + F */}
+                    <div className="flex flex-col justify-center gap-12 h-full">
+                        <div className="pl-8 md:pl-0"><MatchCard m={fifaMatches[4]} onFinish={finalizarPartido} /></div>
+                        <div className="scale-110 z-10 border-2 border-yellow-500/50 rounded-lg shadow-[0_0_20px_rgba(234,179,8,0.3)] bg-black">
+                             <div className="bg-yellow-500 text-black text-[10px] font-black text-center uppercase tracking-widest">Gran Final</div>
+                             <MatchCard m={fifaMatches[6]} onFinish={finalizarPartido} />
+                        </div>
+                         <div className="pl-8 md:pl-0"><MatchCard m={fifaMatches[5]} onFinish={finalizarPartido} /></div>
                     </div>
                 </div>
-            )}
+             )}
           </section>
         )}
 
-        {/* --- 4. ZONA DE RIESGO (RULETA & CHUPITOS) --- */}
+        {/* RULETA */}
         {activeTab === 'castigos' && (
-           <section className="animate-in zoom-in duration-300 max-w-lg mx-auto text-center">
-              
-              {/* PANTALLA DEL RESULTADO */}
-              <div className="bg-black/60 p-8 rounded-3xl border-2 border-red-600 mb-8 shadow-[0_0_30px_rgba(220,38,38,0.5)] relative overflow-hidden group">
-                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
-                  <h2 className="text-red-500 font-black tracking-[0.2em] mb-4 uppercase">Sentencia Final</h2>
-                  <div className="min-h-[100px] flex items-center justify-center">
-                      <p className={`text-2xl md:text-3xl font-black transition-all ${isSpinning ? 'text-gray-400 blur-sm' : 'text-white scale-110 drop-shadow-glow'}`}>
-                          {resultadoRuleta}
-                      </p>
-                  </div>
+           <section className="max-w-md mx-auto text-center mt-10">
+              <div className="bg-black/80 border-2 border-red-600 p-8 rounded-3xl shadow-[0_0_40px_rgba(220,38,38,0.4)] mb-8">
+                  <h2 className="text-red-500 font-black uppercase tracking-widest mb-4">El Castigo</h2>
+                  <p className={`text-3xl font-black ${isSpinning?'blur-sm text-gray-500':'text-white scale-110'}`}>{resultadoRuleta}</p>
               </div>
-
-              {/* CONTROLES */}
               <div className="grid grid-cols-2 gap-4">
-                  {/* BOTÓN 1: CASTIGOS SOFT */}
-                  <button 
-                    onClick={() => girarRuleta('soft')} 
-                    disabled={isSpinning}
-                    className="bg-neutral-800 hover:bg-neutral-700 p-6 rounded-2xl border border-gray-600 transition group disabled:opacity-50"
-                  >
-                      <div className="text-4xl mb-2 group-hover:scale-110 transition">🤡</div>
-                      <h3 className="font-bold text-gray-300">Reto Gracioso</h3>
-                      <p className="text-xs text-gray-500">Para reír un rato</p>
-                  </button>
-
-                  {/* BOTÓN 2: CHUPITOS */}
-                  <button 
-                    onClick={() => girarRuleta('chupito')} 
-                    disabled={isSpinning}
-                    className="bg-red-900/50 hover:bg-red-800 p-6 rounded-2xl border border-red-500 transition group disabled:opacity-50 shadow-lg shadow-red-900/20"
-                  >
-                      <div className="text-4xl mb-2 group-hover:rotate-12 transition">🥃</div>
-                      <h3 className="font-bold text-red-300">Modo Chupito</h3>
-                      <p className="text-xs text-red-400">¿Cuántos bebes?</p>
-                  </button>
+                  <button disabled={isSpinning} onClick={()=>girarRuleta('soft')} className="bg-gray-800 p-4 rounded-xl border border-gray-600 hover:bg-gray-700 font-bold">🤡 Reto Soft</button>
+                  <button disabled={isSpinning} onClick={()=>girarRuleta('chupito')} className="bg-red-900 p-4 rounded-xl border border-red-600 hover:bg-red-800 font-bold text-red-200">🥃 Chupito</button>
               </div>
-
-              <p className="mt-8 text-xs text-gray-600">
-                  *Lo que diga la ruleta va a misa. Sincronizado en todos los móviles.
-              </p>
            </section>
         )}
-
       </div>
     </main>
   );
+}
+
+// COMPONENTE TARJETA DE PARTIDO (CON INPUTS)
+function MatchCard({ m, onFinish }: { m: Match, onFinish: (id: number, s1: number, s2: number) => void }) {
+    const [s1, setS1] = useState("");
+    const [s2, setS2] = useState("");
+
+    const handleConfirm = () => {
+        if (s1 === "" || s2 === "") return;
+        onFinish(m.id, parseInt(s1), parseInt(s2));
+    };
+
+    const isWaiting = m.p1 === "Esperando..." || m.p2 === "Esperando...";
+
+    return (
+        <div className={`relative p-2 rounded-lg border mb-2 shadow-md w-full transition-all ${m.winner ? 'bg-blue-900/30 border-blue-500' : 'bg-neutral-800 border-neutral-700'}`}>
+            <div className="absolute -top-2 left-2 bg-black px-2 text-[8px] text-gray-500 uppercase font-bold border border-gray-800 rounded">
+                {m.round === 'Q' ? 'Cuartos' : m.round === 'S' ? 'Semi' : 'FINAL'}
+            </div>
+
+            {m.winner ? (
+                // MODO MOSTRAR RESULTADO
+                <div className="flex justify-between items-center px-2 py-2">
+                    <span className={`text-xs font-bold w-1/3 truncate text-right ${m.winner===m.p1 ? 'text-green-400' : 'text-gray-400'}`}>{m.p1}</span>
+                    <div className="bg-black/50 px-2 py-1 rounded text-xs font-black text-white">{m.score1} - {m.score2}</div>
+                    <span className={`text-xs font-bold w-1/3 truncate text-left ${m.winner===m.p2 ? 'text-green-400' : 'text-gray-400'}`}>{m.p2}</span>
+                </div>
+            ) : (
+                // MODO JUGANDO (INPUTS)
+                <div className="flex flex-col gap-2 mt-2">
+                    <div className="flex justify-between items-center gap-2">
+                        <span className="text-xs font-bold w-16 truncate text-right text-gray-300">{m.p1}</span>
+                        <input type="number" placeholder="0" className="w-8 h-8 bg-black/50 text-center rounded text-white border border-gray-600 text-sm" value={s1} onChange={e => setS1(e.target.value)} disabled={isWaiting}/>
+                        <span className="text-[8px] text-gray-600">VS</span>
+                        <input type="number" placeholder="0" className="w-8 h-8 bg-black/50 text-center rounded text-white border border-gray-600 text-sm" value={s2} onChange={e => setS2(e.target.value)} disabled={isWaiting}/>
+                        <span className="text-xs font-bold w-16 truncate text-left text-gray-300">{m.p2}</span>
+                    </div>
+                    {!isWaiting && (
+                        <button onClick={handleConfirm} className="w-full bg-blue-600/20 hover:bg-blue-600 text-blue-200 hover:text-white text-[10px] py-1 rounded uppercase font-bold tracking-wider transition">
+                            Terminar
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
 }
