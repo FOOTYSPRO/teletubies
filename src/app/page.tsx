@@ -37,9 +37,8 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [mayorPaliza, setMayorPaliza] = useState<{winner: string, loser: string, diff: number, result: string} | null>(null);
   
-  // CASTIGOS & CAOS
+  // CASTIGOS
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
-  const [chaosRule, setChaosRule] = useState<string | null>(null); // Nueva Regla del Caos
   const [isSpinning, setIsSpinning] = useState(false);
   const [showDJ, setShowDJ] = useState(false);
 
@@ -54,19 +53,6 @@ export default function Home() {
   
   const listaSoft = ["Haz 10 flexiones 💪", "Manda un audio cantando 🎤", "Baila sin música 30seg 💃", "No puedes hablar 1 ronda 🤐", "Comentarista next game 🎙️", "Enseña última foto carrete 📱", "Sirve bebida a todos 🥤"];
   const listaChupitos = ["🥃 1 Chupito", "🥃🥃 2 Chupitos", "🌊 ¡Cascada!", "🤝 Elige compañero", "🚫 Te libras", "💀 CHUPITO MORTAL"];
-  
-  // NUEVA: LISTA DEL CAOS
-  const CHAOS_RULES = [
-      "⚽ Goles de fuera del área valen DOBLE",
-      "🤐 Prohibido hablar durante el partido",
-      "🗿 Se juega de pie (sin sentarse)",
-      "🧤 El que gane, tira un penalti extra",
-      "🔄 Cambia de mando si te meten gol",
-      "🍺 El que reciba gol, bebe un trago",
-      "🎮 Juega con la cámara 'Pro'",
-      "🦶 Solo valen goles de cabeza/volea",
-      "🥅 Portero delantero (saca al portero)"
-  ];
 
   const lanzarFiesta = () => {
     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#a864fd', '#29cdff', '#78ff44', '#ff718d', '#fdff6a'] });
@@ -84,7 +70,6 @@ export default function Home() {
         setEquipoB(data.equipoB || []);
         setFifaMatches(Array.isArray(data.fifaMatches) ? data.fifaMatches : []);
         if (data.ultimoCastigo) setResultadoRuleta(data.ultimoCastigo);
-        if (data.chaosRule) setChaosRule(data.chaosRule); // Sincronizar Regla Caos
         if (data.fifaMatches && Array.isArray(data.fifaMatches)) calcularPaliza(data.fifaMatches);
       }
     });
@@ -138,18 +123,6 @@ export default function Home() {
           }
       });
       setMayorPaliza(palizaData);
-  };
-
-  // --- GENERAR CAOS ---
-  const generarReglaCaos = async () => {
-      const rule = CHAOS_RULES[Math.floor(Math.random() * CHAOS_RULES.length)];
-      setChaosRule(rule);
-      await setDoc(doc(db, "sala", "principal"), { chaosRule: rule }, { merge: true });
-  };
-
-  const limpiarCaos = async () => {
-      setChaosRule(null);
-      await setDoc(doc(db, "sala", "principal"), { chaosRule: null }, { merge: true });
   };
 
   const handleCrearTorneoAuto = async () => {
@@ -313,7 +286,7 @@ export default function Home() {
 
   const limpiarPizarra = async () => {
       const batch = writeBatch(db);
-      batch.set(doc(db, "sala", "principal"), { equipoA: [], equipoB: [], fifaMatches: [], ultimoCastigo: "Esperando...", chaosRule: null });
+      batch.set(doc(db, "sala", "principal"), { equipoA: [], equipoB: [], fifaMatches: [], ultimoCastigo: "Esperando..." });
       await batch.commit();
   };
 
@@ -406,23 +379,6 @@ export default function Home() {
                 <h2 className="text-2xl font-black text-blue-400 mb-4">🏆 Nuevo Torneo</h2>
                 <textarea className="w-full h-32 bg-black/40 border border-gray-700 rounded-xl p-4 text-white resize-none mb-4 focus:outline-none focus:border-blue-500 transition" placeholder="Pega lista..." value={fifaInput} onChange={e=>setFifaInput(e.target.value)}></textarea>
                 <button onClick={handleCrearTorneoAuto} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-xl shadow-lg">⚡ GENERAR CUADRO + EQUIPOS</button>
-             </div>
-
-             {/* TARJETA DEL CAOS */}
-             <div className="max-w-xl mx-auto mb-8 relative">
-                 {chaosRule ? (
-                     <div className="bg-gradient-to-r from-orange-600 to-red-600 p-6 rounded-2xl shadow-[0_0_40px_rgba(234,88,12,0.4)] animate-in zoom-in">
-                         <div className="flex justify-between items-start mb-2">
-                             <h3 className="text-white font-black uppercase tracking-widest text-sm">🔥 REGLA DEL CAOS ACTIVA</h3>
-                             <button onClick={limpiarCaos} className="text-xs text-white/70 hover:text-white bg-black/20 px-2 py-1 rounded">Desactivar</button>
-                         </div>
-                         <p className="text-2xl font-black text-white text-center drop-shadow-md">{chaosRule}</p>
-                     </div>
-                 ) : (
-                     <button onClick={generarReglaCaos} className="w-full bg-neutral-800 hover:bg-orange-900/30 border border-orange-500/30 border-dashed text-orange-400 font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
-                         <span>🃏 ACTIVAR CARTA DEL CAOS</span>
-                     </button>
-                 )}
              </div>
 
              {mayorPaliza && (
