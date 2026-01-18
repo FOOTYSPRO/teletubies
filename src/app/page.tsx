@@ -41,7 +41,7 @@ export default function Home() {
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
   const [isSpinning, setIsSpinning] = useState(false);
 
-  // --- LISTAS ---
+  // LISTAS
   const TEAMS_REAL = [
     "Man. City 🔵", "Real Madrid 👑", "Bayern Múnich 🔴", "Liverpool 🔴", 
     "Arsenal 🔴", "Inter Milán ⚫🔵", "PSG 🗼", "FC Barcelona 🔵🔴",
@@ -113,7 +113,6 @@ export default function Home() {
       setMayorPaliza(palizaData);
   };
 
-  // --- CREAR TORNEO (CORREGIDO: No usa undefined) ---
   const handleCrearTorneoAuto = async () => {
     try {
         let nombres = fifaInput.split(/[\n,]+/).map((n) => n.trim()).filter((n) => n);
@@ -130,7 +129,6 @@ export default function Home() {
         const shuffledTeams = [...TEAMS_REAL].sort(() => Math.random() - 0.5);
         const shuffledClubs = [...TEAMS_FUNNY].sort(() => Math.random() - 0.5);
 
-        // AQUÍ ESTABA EL ERROR: Usamos null en vez de undefined
         const getP = (idx: number) => {
             const isBye = shuffledPlayers[idx] === BYE_NAME;
             return {
@@ -160,22 +158,18 @@ export default function Home() {
             ];
         }
 
-        // Helper para propagar datos (Protegido contra undefined)
         const propagate = (targetIdx: number, slot: 'p1' | 'p2', source: Match) => {
             const winnerKey = source.winner === source.p1 ? 'p1' : 'p2';
             matches[targetIdx][slot] = source.winner!;
-            // Si es undefined, ponemos null
             matches[targetIdx][slot === 'p1' ? 'p1Team' : 'p2Team'] = source[winnerKey === 'p1' ? 'p1Team' : 'p2Team'] || null;
             matches[targetIdx][slot === 'p1' ? 'p1Club' : 'p2Club'] = source[winnerKey === 'p1' ? 'p1Club' : 'p2Club'] || null;
         };
 
-        // Resolver Byes
         matches.forEach(m => {
             if (m.p2 === BYE_NAME) { m.winner = m.p1; m.isBye = true; } 
             else if (m.p1 === BYE_NAME) { m.winner = m.p2; m.isBye = true; }
         });
 
-        // Propagar Byes
         if (size === 4) {
             if (matches[0].winner) propagate(2, 'p1', matches[0]);
             if (matches[1].winner) propagate(2, 'p2', matches[1]);
@@ -186,9 +180,7 @@ export default function Home() {
             if (matches[3].winner) propagate(5, 'p2', matches[3]);
         }
 
-        // Sanitización final para asegurar que nada es undefined
         const cleanMatches = matches.map(m => JSON.parse(JSON.stringify(m, (k, v) => v === undefined ? null : v)));
-
         await setDoc(doc(db, "sala", "principal"), { fifaMatches: cleanMatches }, { merge: true });
         setFifaInput("");
 
@@ -205,7 +197,7 @@ export default function Home() {
     
     const isP1Winner = s1 > s2;
     const winner = isP1Winner ? currentMatch.p1 : currentMatch.p2;
-    const winnerTeam = (isP1Winner ? currentMatch.p1Team : currentMatch.p2Team) || null; // Protección null
+    const winnerTeam = (isP1Winner ? currentMatch.p1Team : currentMatch.p2Team) || null; 
     const winnerClub = (isP1Winner ? currentMatch.p1Club : currentMatch.p2Club) || null;
 
     try {
@@ -217,7 +209,6 @@ export default function Home() {
       let nuevosPartidos = [...fifaMatches];
       nuevosPartidos = nuevosPartidos.map(m => m.id === matchId ? { ...m, score1: s1, score2: s2, winner: winner } : m);
 
-      // Avanzar
       const avanzar = (targetId: number, slot: 'p1' | 'p2') => {
           if (!nuevosPartidos[targetId]) return;
           nuevosPartidos[targetId][slot] = winner;
@@ -282,8 +273,26 @@ export default function Home() {
     setPachangaInput(""); 
   };
 
-  const resetearTemporada = async () => {
-    if(!confirm("⚠️ ¿Resetear TODO?")) return;
+  // --- NUEVAS FUNCIONES DE RESET ---
+  
+  // 1. LIMPIAR PIZARRA (Solo borra el juego actual, MANTIENE PUNTOS Y LIGA)
+  const limpiarPizarra = async () => {
+      const batch = writeBatch(db);
+      // Solo limpiamos la sala, NO el ranking ni el historial
+      batch.set(doc(db, "sala", "principal"), { 
+          equipoA: [], 
+          equipoB: [], 
+          fifaMatches: [], 
+          ultimoCastigo: "Esperando..." 
+      });
+      await batch.commit();
+      // No alert, para que sea rápido
+  };
+
+  // 2. HARD RESET (Borra toda la temporada)
+  const borrarTodaTemporada = async () => {
+    if(!confirm("⛔ ¡PELIGRO! ¿Seguro que quieres borrar todo el RANKING y el PALMARÉS? Esto es irreversible.")) return;
+    
     const batch = writeBatch(db);
     const rankingSnap = await getDocs(query(collection(db, "ranking")));
     rankingSnap.forEach((doc) => batch.delete(doc.ref));
@@ -291,7 +300,7 @@ export default function Home() {
     historySnap.forEach((doc) => batch.delete(doc.ref));
     batch.set(doc(db, "sala", "principal"), { equipoA: [], equipoB: [], fifaMatches: [], ultimoCastigo: "..." });
     await batch.commit();
-    alert("Temporada y palmarés borrados 🏁");
+    alert("Temporada borrada por completo.");
   };
 
   return (
@@ -308,7 +317,16 @@ export default function Home() {
                     </button>
                 ))}
             </nav>
-            <button onClick={resetearTemporada} className="hidden md:block text-[10px] text-gray-500 hover:text-red-500 border border-gray-800 hover:border-red-900 rounded px-2 py-1 transition">Reset</button>
+            
+            {/* ZONA DE CONTROL */}
+            <div className="flex gap-2">
+                <button onClick={limpiarPizarra} className="hidden md:flex items-center gap-1 bg-neutral-800 hover:bg-neutral-700 border border-gray-600 text-xs text-white font-bold px-3 py-2 rounded-lg transition">
+                    🔄 Limpiar Pizarra
+                </button>
+                <button onClick={borrarTodaTemporada} className="hidden md:block text-[10px] text-gray-600 hover:text-red-500 hover:bg-red-950/30 border border-transparent hover:border-red-900 rounded px-2 py-1 transition">
+                    ⛔ Hard Reset
+                </button>
+            </div>
         </div>
       </header>
 
