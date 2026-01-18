@@ -10,10 +10,9 @@ import confetti from "canvas-confetti";
 // --- TIPOS ---
 type Match = { 
   id: number; 
-  p1: string; p1Team?: string; p1Club?: string; // Datos Jugador 1
-  p2: string; p2Team?: string; p2Club?: string; // Datos Jugador 2
-  score1?: number; 
-  score2?: number; 
+  p1: string; p1Team?: string; p1Club?: string;
+  p2: string; p2Team?: string; p2Club?: string;
+  score1?: number; score2?: number; 
   winner?: string; 
   round: 'Q' | 'S' | 'F'; 
   isBye?: boolean;
@@ -23,22 +22,7 @@ type Player = { nombre: string; puntos: number; victorias: number };
 type HistoryItem = { winner: string; winnerTeam?: string; date: any; type: string };
 type Tab = 'home' | 'pachanga' | 'fifa' | 'castigos';
 
-const BYE_NAME = "Pasa Turno ➡️";
-
-// --- BASES DE DATOS ---
-const TEAMS_REAL = [
-    "Man. City 🔵", "Real Madrid 👑", "Bayern Múnich 🔴", "Liverpool 🔴", 
-    "Arsenal 🔴", "Inter Milán ⚫🔵", "PSG 🗼", "FC Barcelona 🔵🔴",
-    "Atlético Madrid 🔴⚪", "B. Leverkusen ⚫🔴", "AC Milan ⚫🔴", "Juventus ⚫⚪",
-    "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Tottenham ⚪"
-];
-
-const TEAMS_FUNNY = [
-    "Aston Birra", "Nottingham Prisa", "Inter de Mitente", "Vodka Juniors",
-    "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo",
-    "Schalke Te Meto", "Abuelos FC", "Patético de Madrid", "Bajern de Munich",
-    "Real Suciedad", "Olimpique de Marsopa", "West Jamón", "Levante en Barra"
-];
+const BYE_NAME = "Pase Directo ➡️";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
@@ -52,13 +36,30 @@ export default function Home() {
   const [ranking, setRanking] = useState<Player[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [mayorPaliza, setMayorPaliza] = useState<{winner: string, loser: string, diff: number, result: string} | null>(null);
+  
+  // RULETA
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
   const [isSpinning, setIsSpinning] = useState(false);
 
-  // Listas Castigos
+  // --- CONSTANTES (Ahora dentro para evitar errores) ---
+  const TEAMS_REAL = [
+    "Man. City 🔵", "Real Madrid 👑", "Bayern Múnich 🔴", "Liverpool 🔴", 
+    "Arsenal 🔴", "Inter Milán ⚫🔵", "PSG 🗼", "FC Barcelona 🔵🔴",
+    "Atlético Madrid 🔴⚪", "B. Leverkusen ⚫🔴", "AC Milan ⚫🔴", "Juventus ⚫⚪",
+    "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Tottenham ⚪"
+  ];
+
+  const TEAMS_FUNNY = [
+    "Aston Birra", "Nottingham Prisa", "Inter de Mitente", "Vodka Juniors",
+    "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo",
+    "Schalke Te Meto", "Abuelos FC", "Patético de Madrid", "Bajern de Munich",
+    "Real Suciedad", "Olimpique de Marsopa", "West Jamón", "Levante en Barra"
+  ];
+  
   const listaSoft = ["Haz 10 flexiones 💪", "Manda un audio cantando 🎤", "Baila sin música 30seg 💃", "No puedes hablar 1 ronda 🤐", "Comentarista next game 🎙️", "Enseña última foto carrete 📱", "Sirve bebida a todos 🥤"];
   const listaChupitos = ["🥃 1 Chupito", "🥃🥃 2 Chupitos", "🌊 ¡Cascada!", "🤝 Elige compañero", "🚫 Te libras", "💀 CHUPITO MORTAL"];
 
+  // --- EFECTOS ---
   const lanzarFiesta = () => {
     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#a864fd', '#29cdff', '#78ff44', '#ff718d', '#fdff6a'] });
     const audio = new Audio("/gol.mp3");
@@ -66,6 +67,7 @@ export default function Home() {
     audio.play().catch(() => {});
   };
 
+  // --- LISTENERS ---
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, "sala", "principal"), (doc) => {
       if (doc.exists()) {
@@ -112,7 +114,88 @@ export default function Home() {
       setMayorPaliza(palizaData);
   };
 
-  // --- LÓGICA DE AVANCE DE RONDA (AHORA ARRASTRA EQUIPOS) ---
+  // --- GENERADOR INTELIGENTE (Debuggeado) ---
+  const handleCrearTorneoAuto = async () => {
+    try {
+        let nombres = fifaInput.split(/[\n,]+/).map((n) => n.trim()).filter((n) => n);
+        
+        if (nombres.length < 2) return alert("❌ Mínimo 2 jugadores.");
+        if (nombres.length > 8) return alert("❌ Máximo 8 jugadores.");
+
+        let size = 8;
+        if (nombres.length <= 4) size = 4;
+        
+        // Rellenar con BYE
+        while (nombres.length < size) nombres.push(BYE_NAME);
+        
+        // Barajar todo
+        const shuffledPlayers = [...nombres].sort(() => Math.random() - 0.5);
+        const shuffledTeams = [...TEAMS_REAL].sort(() => Math.random() - 0.5);
+        const shuffledClubs = [...TEAMS_FUNNY].sort(() => Math.random() - 0.5);
+
+        // Crear objeto de jugador seguro
+        const getP = (idx: number) => {
+            const isBye = shuffledPlayers[idx] === BYE_NAME;
+            return {
+                name: shuffledPlayers[idx],
+                team: isBye ? undefined : shuffledTeams[idx],
+                club: isBye ? undefined : shuffledClubs[idx]
+            };
+        };
+
+        let matches: Match[] = [];
+
+        if (size === 4) {
+            matches = [
+                { id: 0, p1: getP(0).name, p1Team: getP(0).team, p1Club: getP(0).club, p2: getP(1).name, p2Team: getP(1).team, p2Club: getP(1).club, round: 'S' },
+                { id: 1, p1: getP(2).name, p1Team: getP(2).team, p1Club: getP(2).club, p2: getP(3).name, p2Team: getP(3).team, p2Club: getP(3).club, round: 'S' },
+                { id: 2, p1: "Esperando...", p2: "Esperando...", round: 'F' }
+            ];
+        } else {
+            matches = [
+                { id: 0, p1: getP(0).name, p1Team: getP(0).team, p1Club: getP(0).club, p2: getP(1).name, p2Team: getP(1).team, p2Club: getP(1).club, round: 'Q' },
+                { id: 1, p1: getP(2).name, p1Team: getP(2).team, p1Club: getP(2).club, p2: getP(3).name, p2Team: getP(3).team, p2Club: getP(3).club, round: 'Q' },
+                { id: 2, p1: getP(4).name, p1Team: getP(4).team, p1Club: getP(4).club, p2: getP(5).name, p2Team: getP(5).team, p2Club: getP(5).club, round: 'Q' },
+                { id: 3, p1: getP(6).name, p1Team: getP(6).team, p1Club: getP(6).club, p2: getP(7).name, p2Team: getP(7).team, p2Club: getP(7).club, round: 'Q' },
+                { id: 4, p1: "Esperando...", p2: "Esperando...", round: 'S' },
+                { id: 5, p1: "Esperando...", p2: "Esperando...", round: 'S' },
+                { id: 6, p1: "Esperando...", p2: "Esperando...", round: 'F' }
+            ];
+        }
+
+        // Resolver Byes (Pase directo)
+        matches.forEach(m => {
+            if (m.p2 === BYE_NAME) { m.winner = m.p1; m.isBye = true; } 
+            else if (m.p1 === BYE_NAME) { m.winner = m.p2; m.isBye = true; }
+        });
+
+        // Helper para propagar datos
+        const propagate = (targetIdx: number, slot: 'p1' | 'p2', source: Match) => {
+            const winnerKey = source.winner === source.p1 ? 'p1' : 'p2';
+            matches[targetIdx][slot] = source.winner!;
+            matches[targetIdx][slot === 'p1' ? 'p1Team' : 'p2Team'] = source[winnerKey === 'p1' ? 'p1Team' : 'p2Team'];
+            matches[targetIdx][slot === 'p1' ? 'p1Club' : 'p2Club'] = source[winnerKey === 'p1' ? 'p1Club' : 'p2Club'];
+        };
+
+        if (size === 4) {
+            if (matches[0].winner) propagate(2, 'p1', matches[0]);
+            if (matches[1].winner) propagate(2, 'p2', matches[1]);
+        } else {
+            if (matches[0].winner) propagate(4, 'p1', matches[0]);
+            if (matches[1].winner) propagate(4, 'p2', matches[1]);
+            if (matches[2].winner) propagate(5, 'p1', matches[2]);
+            if (matches[3].winner) propagate(5, 'p2', matches[3]);
+        }
+
+        await setDoc(doc(db, "sala", "principal"), { fifaMatches: matches }, { merge: true });
+        setFifaInput("");
+
+    } catch (error) {
+        console.error(error);
+        alert("⚠️ Error al crear torneo: " + error);
+    }
+  };
+
   const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
     if (s1 === s2) return alert("❌ En eliminatorias no puede haber empate.");
     const currentMatch = fifaMatches.find(m => m && m.id === matchId);
@@ -120,7 +203,6 @@ export default function Home() {
     
     const isP1Winner = s1 > s2;
     const winner = isP1Winner ? currentMatch.p1 : currentMatch.p2;
-    // Capturamos los datos del equipo ganador para pasarlos a la siguiente ronda
     const winnerTeam = isP1Winner ? currentMatch.p1Team : currentMatch.p2Team;
     const winnerClub = isP1Winner ? currentMatch.p1Club : currentMatch.p2Club;
 
@@ -133,39 +215,39 @@ export default function Home() {
       let nuevosPartidos = [...fifaMatches];
       nuevosPartidos = nuevosPartidos.map(m => m.id === matchId ? { ...m, score1: s1, score2: s2, winner: winner } : m);
 
-      // Helper para pasar datos al siguiente partido
-      const avanzarJugador = (targetId: number, slot: 'p1' | 'p2') => {
+      // Función segura para avanzar
+      const avanzar = (targetId: number, slot: 'p1' | 'p2') => {
+          if (!nuevosPartidos[targetId]) return;
           nuevosPartidos[targetId][slot] = winner;
           nuevosPartidos[targetId][slot === 'p1' ? 'p1Team' : 'p2Team'] = winnerTeam;
           nuevosPartidos[targetId][slot === 'p1' ? 'p1Club' : 'p2Club'] = winnerClub;
       };
 
-      const isSmallTournament = fifaMatches.length === 3;
-      const isBigTournament = fifaMatches.length === 7;
+      const isSmall = fifaMatches.length === 3;
+      const isBig = fifaMatches.length === 7;
 
-      if (isSmallTournament) {
-          if (matchId === 0) avanzarJugador(2, 'p1');
-          if (matchId === 1) avanzarJugador(2, 'p2');
-      } 
-      else if (isBigTournament) {
-          if (matchId === 0) avanzarJugador(4, 'p1');
-          if (matchId === 1) avanzarJugador(4, 'p2');
-          if (matchId === 2) avanzarJugador(5, 'p1');
-          if (matchId === 3) avanzarJugador(5, 'p2');
-          if (matchId === 4) avanzarJugador(6, 'p1');
-          if (matchId === 5) avanzarJugador(6, 'p2');
+      if (isSmall) {
+          if (matchId === 0) avanzar(2, 'p1');
+          if (matchId === 1) avanzar(2, 'p2');
+      } else if (isBig) {
+          if (matchId === 0) avanzar(4, 'p1');
+          if (matchId === 1) avanzar(4, 'p2');
+          if (matchId === 2) avanzar(5, 'p1');
+          if (matchId === 3) avanzar(5, 'p2');
+          if (matchId === 4) avanzar(6, 'p1');
+          if (matchId === 5) avanzar(6, 'p2');
       }
 
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: nuevosPartidos }, { merge: true });
       
-      const lastId = isSmallTournament ? 2 : 6;
+      const lastId = isSmall ? 2 : 6;
       if (matchId === lastId) {
           confetti({ particleCount: 500, spread: 100 });
           await addDoc(collection(db, "history"), {
               winner: winner,
-              winnerTeam: winnerTeam, // Guardamos también el equipo con el que ganó
+              winnerTeam: winnerTeam || "Sin Equipo",
               date: serverTimestamp(),
-              type: isSmallTournament ? "Express (4p)" : "Oficial (8p)"
+              type: isSmall ? "Express (4p)" : "Oficial (8p)"
           });
       } else {
           lanzarFiesta();
@@ -174,77 +256,6 @@ export default function Home() {
     } catch (e) { console.error(e); }
   };
 
-  // --- GENERADOR DE TORNEO (AHORA ASIGNA EQUIPOS) ---
-  const handleCrearTorneoAuto = async () => {
-    let nombres = fifaInput.split(/[\n,]+/).map((n) => n.trim()).filter((n) => n);
-    if (nombres.length < 2) return alert("Mínimo 2 jugadores.");
-    if (nombres.length > 8) return alert("Máximo 8 jugadores.");
-
-    let size = 8;
-    if (nombres.length <= 4) size = 4;
-    while (nombres.length < size) nombres.push(BYE_NAME);
-    
-    // 1. Barajamos jugadores
-    const shuffledPlayers = [...nombres].sort(() => Math.random() - 0.5);
-    // 2. Barajamos equipos reales
-    const shuffledTeams = [...TEAMS_REAL].sort(() => Math.random() - 0.5);
-    // 3. Barajamos nombres graciosos
-    const shuffledClubs = [...TEAMS_FUNNY].sort(() => Math.random() - 0.5);
-
-    // Helper para crear objeto jugador con sus equipos
-    const getP = (idx: number) => ({
-        name: shuffledPlayers[idx],
-        team: shuffledPlayers[idx] === BYE_NAME ? undefined : shuffledTeams[idx],
-        club: shuffledPlayers[idx] === BYE_NAME ? undefined : shuffledClubs[idx]
-    });
-
-    let matches: Match[] = [];
-
-    if (size === 4) {
-        matches = [
-            { id: 0, p1: getP(0).name, p1Team: getP(0).team, p1Club: getP(0).club, p2: getP(1).name, p2Team: getP(1).team, p2Club: getP(1).club, round: 'S' },
-            { id: 1, p1: getP(2).name, p1Team: getP(2).team, p1Club: getP(2).club, p2: getP(3).name, p2Team: getP(3).team, p2Club: getP(3).club, round: 'S' },
-            { id: 2, p1: "Esperando...", p2: "Esperando...", round: 'F' }
-        ];
-    } else {
-        matches = [
-            { id: 0, p1: getP(0).name, p1Team: getP(0).team, p1Club: getP(0).club, p2: getP(1).name, p2Team: getP(1).team, p2Club: getP(1).club, round: 'Q' },
-            { id: 1, p1: getP(2).name, p1Team: getP(2).team, p1Club: getP(2).club, p2: getP(3).name, p2Team: getP(3).team, p2Club: getP(3).club, round: 'Q' },
-            { id: 2, p1: getP(4).name, p1Team: getP(4).team, p1Club: getP(4).club, p2: getP(5).name, p2Team: getP(5).team, p2Club: getP(5).club, round: 'Q' },
-            { id: 3, p1: getP(6).name, p1Team: getP(6).team, p1Club: getP(6).club, p2: getP(7).name, p2Team: getP(7).team, p2Club: getP(7).club, round: 'Q' },
-            { id: 4, p1: "Esperando...", p2: "Esperando...", round: 'S' },
-            { id: 5, p1: "Esperando...", p2: "Esperando...", round: 'S' },
-            { id: 6, p1: "Esperando...", p2: "Esperando...", round: 'F' }
-        ];
-    }
-
-    // Resolver Byes (y pasar los equipos)
-    const passBye = (targetId: number, slot: 'p1' | 'p2', source: Match, winnerIdx: 'p1' | 'p2') => {
-        matches[targetId][slot] = source[winnerIdx];
-        matches[targetId][slot === 'p1' ? 'p1Team' : 'p2Team'] = source[winnerIdx === 'p1' ? 'p1Team' : 'p2Team'];
-        matches[targetId][slot === 'p1' ? 'p1Club' : 'p2Club'] = source[winnerIdx === 'p1' ? 'p1Club' : 'p2Club'];
-    };
-
-    matches.forEach((m, idx) => {
-        if (m.p2 === BYE_NAME) { m.winner = m.p1; m.isBye = true; } 
-        else if (m.p1 === BYE_NAME) { m.winner = m.p2; m.isBye = true; }
-    });
-
-    if (size === 4) {
-        if (matches[0].winner) passBye(2, 'p1', matches[0], matches[0].winner === matches[0].p1 ? 'p1' : 'p2');
-        if (matches[1].winner) passBye(2, 'p2', matches[1], matches[1].winner === matches[1].p1 ? 'p1' : 'p2');
-    } else {
-        if (matches[0].winner) passBye(4, 'p1', matches[0], matches[0].winner === matches[0].p1 ? 'p1' : 'p2');
-        if (matches[1].winner) passBye(4, 'p2', matches[1], matches[1].winner === matches[1].p1 ? 'p1' : 'p2');
-        if (matches[2].winner) passBye(5, 'p1', matches[2], matches[2].winner === matches[2].p1 ? 'p1' : 'p2');
-        if (matches[3].winner) passBye(5, 'p2', matches[3], matches[3].winner === matches[3].p1 ? 'p1' : 'p2');
-    }
-
-    await setDoc(doc(db, "sala", "principal"), { fifaMatches: matches }, { merge: true });
-    setFifaInput("");
-  };
-
-  // --- OTRAS FUNCIONES ---
   const girarRuleta = async (tipo: 'soft' | 'chupito') => {
     setIsSpinning(true);
     const lista = tipo === 'soft' ? listaSoft : listaChupitos;
@@ -426,6 +437,7 @@ function MatchCard({ m, onFinish, isFinal }: { m?: Match, onFinish: (id: number,
     const [s2, setS2] = useState("");
     if (!m) return <div className="bg-gray-900/50 p-2 rounded border border-gray-800 h-16 animate-pulse w-40"></div>;
     const isWaiting = m.p1 === "Esperando..." || m.p2 === "Esperando...";
+
     if (m.isBye) return <div className="relative p-3 rounded-xl border border-white/5 bg-neutral-900/30 w-full min-w-[180px] opacity-70"><div className="text-center py-2"><p className="text-green-500 font-bold mb-1">✅ {m.winner}</p><p className="text-[9px] text-gray-500 uppercase">Pase Directo</p></div></div>;
 
     return (
