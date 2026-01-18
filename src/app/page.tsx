@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
 import { 
   doc, onSnapshot, setDoc, collection, query, orderBy, increment, 
-  getDocs, writeBatch 
+  addDoc, serverTimestamp, getDocs, writeBatch 
 } from "firebase/firestore";
 import confetti from "canvas-confetti";
 
@@ -16,13 +16,14 @@ type Match = {
   score2?: number; 
   winner?: string; 
   round: 'Q' | 'S' | 'F'; 
-  isBye?: boolean; // Nuevo: Marca si es un partido de pase directo
+  isBye?: boolean;
 };
 
 type Player = { nombre: string; puntos: number; victorias: number };
+type HistoryItem = { winner: string; date: any; type: string }; // Nuevo tipo para historial
 type Tab = 'home' | 'pachanga' | 'fifa' | 'castigos';
 
-const BYE_NAME = "Pasa Turno ➡️"; // Nombre interno para los huecos
+const BYE_NAME = "Pasa Turno ➡️";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
@@ -34,7 +35,10 @@ export default function Home() {
   const [equipoB, setEquipoB] = useState<string[]>([]);
   const [fifaMatches, setFifaMatches] = useState<Match[]>([]);
   const [ranking, setRanking] = useState<Player[]>([]);
+  const [history, setHistory] = useState<HistoryItem[]>([]); // Estado para el historial
   const [mayorPaliza, setMayorPaliza] = useState<{winner: string, loser: string, diff: number, result: string} | null>(null);
+  
+  // RULETA
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
   const [isSpinning, setIsSpinning] = useState(false);
 
@@ -49,6 +53,7 @@ export default function Home() {
     audio.play().catch(() => {});
   };
 
+  // --- FIREBASE LISTENERS ---
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, "sala", "principal"), (doc) => {
       if (doc.exists()) {
@@ -63,6 +68,7 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
+  // Listener Ranking
   useEffect(() => {
     const q = query(collection(db, "ranking"), orderBy("puntos", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -71,11 +77,19 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
+  // Listener Historial (Nuevo)
+  useEffect(() => {
+    const q = query(collection(db, "history"), orderBy("date", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setHistory(snapshot.docs.map(doc => ({ ...doc.data() })) as HistoryItem[]);
+    });
+    return () => unsubscribe();
+  }, []);
+
   const calcularPaliza = (matches: Match[]) => {
       let maxDiff = 0;
       let palizaData = null;
       matches.forEach(m => {
-          // Ignoramos partidos BYE para la paliza
           if (m && !m.isBye && m.winner && m.score1 !== undefined && m.score2 !== undefined) {
               const diff = Math.abs(m.score1 - m.score2);
               if (diff > maxDiff) {
@@ -95,7 +109,7 @@ export default function Home() {
     const winner = s1 > s2 ? currentMatch.p1 : currentMatch.p2;
 
     try {
-      // 1. Sumar puntos (Solo si NO es un partido Bye)
+      // 1. Sumar puntos
       if(!currentMatch.isBye && winner !== "Esperando...") {
         const playerRef = doc(db, "ranking", winner);
         await setDoc(playerRef, { puntos: increment(3), victorias: increment(1) }, { merge: true });
@@ -104,7 +118,7 @@ export default function Home() {
       let nuevosPartidos = [...fifaMatches];
       nuevosPartidos = nuevosPartidos.map(m => m.id === matchId ? { ...m, score1: s1, score2: s2, winner: winner } : m);
 
-      // AVANCE
+      // AVANCE DE RONDA
       const isSmallTournament = fifaMatches.length === 3;
       const isBigTournament = fifaMatches.length === 7;
 
@@ -123,31 +137,36 @@ export default function Home() {
 
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: nuevosPartidos }, { merge: true });
       
+      // SI ES LA FINAL: Guardar en Historial
       const lastId = isSmallTournament ? 2 : 6;
-      if (matchId === lastId) confetti({ particleCount: 500, spread: 100 });
-      else lanzarFiesta();
+      if (matchId === lastId) {
+          confetti({ particleCount: 500, spread: 100 });
+          // Guardamos quién ganó este torneo específico
+          await addDoc(collection(db, "history"), {
+              winner: winner,
+              date: serverTimestamp(),
+              type: isSmallTournament ? "Express (4p)" : "Oficial (8p)"
+          });
+      } else {
+          lanzarFiesta();
+      }
 
     } catch (e) { console.error(e); }
   };
 
-  // --- GENERADOR INTELIGENTE CON BYES ---
   const handleCrearTorneoAuto = async () => {
     let nombres = fifaInput.split(/[\n,]+/).map((n) => n.trim()).filter((n) => n);
-    
     if (nombres.length < 2) return alert("Mínimo 2 jugadores.");
     if (nombres.length > 8) return alert("Máximo 8 jugadores.");
 
     let size = 8;
     if (nombres.length <= 4) size = 4;
 
-    // Rellenar con "BYE" en lugar de Bots
     while (nombres.length < size) nombres.push(BYE_NAME);
     
-    // Barajamos
     const shuffled = [...nombres].sort(() => Math.random() - 0.5);
     let matches: Match[] = [];
 
-    // Estructura Inicial Vacía
     if (size === 4) {
         matches = [
             { id: 0, p1: shuffled[0], p2: shuffled[1], round: 'S' },
@@ -166,19 +185,13 @@ export default function Home() {
         ];
     }
 
-    // RESOLUCIÓN AUTOMÁTICA DE BYES
-    // Si un partido tiene un "BYE", el otro jugador gana al instante
+    // Resolver Byes
     matches.forEach(m => {
-        if (m.p2 === BYE_NAME) {
-            m.winner = m.p1; // Gana el P1
-            m.isBye = true;  // Marcamos como Bye
-        } else if (m.p1 === BYE_NAME) {
-            m.winner = m.p2; // Gana el P2 (raro tras shuffle pero posible)
-            m.isBye = true;
-        }
+        if (m.p2 === BYE_NAME) { m.winner = m.p1; m.isBye = true; } 
+        else if (m.p1 === BYE_NAME) { m.winner = m.p2; m.isBye = true; }
     });
 
-    // PROPAGACIÓN INICIAL DE GANADORES BYE A LA SIGUIENTE RONDA
+    // Propagar Byes
     if (size === 4) {
         if (matches[0].winner) matches[2].p1 = matches[0].winner;
         if (matches[1].winner) matches[2].p2 = matches[1].winner;
@@ -218,13 +231,16 @@ export default function Home() {
   };
 
   const resetearTemporada = async () => {
-    if(!confirm("⚠️ ¿Resetear TODO?")) return;
+    if(!confirm("⚠️ ¿Resetear Ranking y Torneos?")) return;
     const batch = writeBatch(db);
-    const snapshot = await getDocs(query(collection(db, "ranking")));
-    snapshot.forEach((doc) => batch.delete(doc.ref));
+    const rankingSnap = await getDocs(query(collection(db, "ranking")));
+    rankingSnap.forEach((doc) => batch.delete(doc.ref));
+    const historySnap = await getDocs(query(collection(db, "history"))); // Borrar historial también
+    historySnap.forEach((doc) => batch.delete(doc.ref));
+    
     batch.set(doc(db, "sala", "principal"), { equipoA: [], equipoB: [], fifaMatches: [], ultimoCastigo: "..." });
     await batch.commit();
-    alert("Temporada nueva 🏁");
+    alert("Temporada y palmarés borrados 🏁");
   };
 
   return (
@@ -247,132 +263,131 @@ export default function Home() {
 
       <div className="max-w-6xl mx-auto p-4 md:p-8">
         
+        {/* RANKING & HISTORIAL */}
         {activeTab === 'home' && (
-          <section className="max-w-2xl mx-auto bg-neutral-900/40 border border-purple-500/20 rounded-3xl p-6 backdrop-blur-sm shadow-[0_0_30px_rgba(168,85,247,0.1)]">
-             <h2 className="text-4xl font-black text-center mb-8 text-white drop-shadow-lg">🏆 Ranking Oficial</h2>
-             <div className="space-y-3">
-                {ranking.map((p, i) => (
-                    <div key={p.nombre} className="flex justify-between items-center bg-black/40 p-4 rounded-xl border border-white/5 hover:border-purple-500/50 transition group">
-                        <div className="flex items-center gap-4">
-                            <span className={`font-black text-2xl w-8 text-center ${i===0?'text-yellow-400 drop-shadow-glow':i===1?'text-gray-300':i===2?'text-orange-400':'text-gray-600'}`}>{i+1}</span>
-                            <span className="font-bold text-lg text-gray-200 group-hover:text-white transition">{p.nombre}</span>
+          <div className="grid md:grid-cols-2 gap-8">
+             {/* RANKING ACTUAL */}
+             <section className="bg-neutral-900/40 border border-purple-500/20 rounded-3xl p-6 backdrop-blur-sm shadow-[0_0_30px_rgba(168,85,247,0.1)]">
+                <h2 className="text-3xl font-black text-center mb-6 text-white">🏆 Ranking Actual</h2>
+                <div className="space-y-3">
+                    {ranking.map((p, i) => (
+                        <div key={p.nombre} className="flex justify-between items-center bg-black/40 p-4 rounded-xl border border-white/5">
+                            <div className="flex items-center gap-4">
+                                <span className={`font-black text-2xl w-8 text-center ${i===0?'text-yellow-400':i===1?'text-gray-300':i===2?'text-orange-400':'text-gray-600'}`}>{i+1}</span>
+                                <span className="font-bold text-lg">{p.nombre}</span>
+                            </div>
+                            <span className="font-black text-purple-400 text-xl">{p.puntos} pts</span>
                         </div>
-                        <div className="bg-purple-900/20 px-3 py-1 rounded-lg border border-purple-500/30">
-                            <span className="font-black text-purple-300 text-xl">{p.puntos}</span> <span className="text-[10px] text-purple-400">PTS</span>
+                    ))}
+                    {ranking.length === 0 && <p className="text-center text-gray-500">Sin puntos...</p>}
+                </div>
+             </section>
+
+             {/* HISTORIAL (PALMARÉS) */}
+             <section className="bg-neutral-900/40 border border-yellow-500/20 rounded-3xl p-6 backdrop-blur-sm shadow-[0_0_30px_rgba(234,179,8,0.1)]">
+                <h2 className="text-3xl font-black text-center mb-6 text-yellow-500">📜 Palmarés</h2>
+                <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                    {history.map((h, i) => (
+                        <div key={i} className="flex justify-between items-center bg-yellow-900/10 p-4 rounded-xl border border-yellow-500/20">
+                            <div>
+                                <p className="font-bold text-white text-lg">🏆 {h.winner}</p>
+                                <p className="text-xs text-yellow-500/70 uppercase font-bold">{h.type}</p>
+                            </div>
+                            <span className="text-xs text-gray-500">{h.date ? new Date(h.date.seconds * 1000).toLocaleDateString() : 'Hoy'}</span>
                         </div>
-                    </div>
-                ))}
-                {ranking.length === 0 && <p className="text-center text-gray-500 py-10">Sin datos aún... ¡A jugar!</p>}
-             </div>
-          </section>
+                    ))}
+                    {history.length === 0 && <p className="text-center text-gray-500">Aún no hay campeones guardados.</p>}
+                </div>
+             </section>
+          </div>
         )}
 
+        {/* PACHANGA */}
         {activeTab === 'pachanga' && (
           <section className="max-w-3xl mx-auto bg-neutral-900/40 border border-green-500/20 rounded-3xl p-6 backdrop-blur-sm shadow-[0_0_30px_rgba(34,197,94,0.1)]">
-             <h2 className="text-3xl font-black text-green-400 mb-6 drop-shadow-md">⚽ Generador de Equipos</h2>
+             <h2 className="text-3xl font-black text-green-400 mb-6 drop-shadow-md">⚽ Equipos Random</h2>
              <div className="flex flex-col gap-4 mb-8">
                 <textarea 
-                    className="w-full h-32 bg-black/40 border border-gray-700 rounded-xl p-4 text-base text-white resize-none focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition placeholder-gray-600" 
-                    placeholder="Escribe nombres y pulsa ENTER para nueva línea..." 
+                    className="w-full h-32 bg-black/40 border border-gray-700 rounded-xl p-4 text-white resize-none focus:outline-none focus:border-green-500 transition" 
+                    placeholder="Escribe nombres y pulsa ENTER..." 
                     value={pachangaInput} 
                     onChange={e=>setPachangaInput(e.target.value)}
                 ></textarea>
-                <button onClick={handleSorteoPachanga} className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-black py-4 rounded-xl shadow-lg shadow-green-900/20 transition transform hover:scale-[1.02] active:scale-95">
-                    ¡MEZCLAR EQUIPOS!
-                </button>
+                <button onClick={handleSorteoPachanga} className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white font-black py-4 rounded-xl shadow-lg">MEZCLAR</button>
              </div>
              {equipoA.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="bg-gradient-to-br from-red-950 to-black border border-red-500/30 p-6 rounded-2xl relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-full h-1 bg-red-500"></div>
-                        <h3 className="text-red-400 font-black text-center mb-4 text-xl tracking-widest">🔴 ROJOS</h3>
-                        {equipoA.map((p,i)=><div key={i} className="text-center text-gray-300 font-bold border-b border-red-500/10 py-2 last:border-0">{p}</div>)}
-                    </div>
-                    <div className="bg-gradient-to-br from-blue-950 to-black border border-blue-500/30 p-6 rounded-2xl relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
-                        <h3 className="text-blue-400 font-black text-center mb-4 text-xl tracking-widest">🔵 AZULES</h3>
-                        {equipoB.map((p,i)=><div key={i} className="text-center text-gray-300 font-bold border-b border-blue-500/10 py-2 last:border-0">{p}</div>)}
-                    </div>
+                <div className="grid grid-cols-2 gap-6 animate-in fade-in">
+                    <div className="bg-black/50 border border-red-500/30 p-6 rounded-2xl"><h3 className="text-red-400 font-black text-center mb-4">🔴 ROJOS</h3>{equipoA.map((p,i)=><div key={i} className="text-center text-gray-300 py-1">{p}</div>)}</div>
+                    <div className="bg-black/50 border border-blue-500/30 p-6 rounded-2xl"><h3 className="text-blue-400 font-black text-center mb-4">🔵 AZULES</h3>{equipoB.map((p,i)=><div key={i} className="text-center text-gray-300 py-1">{p}</div>)}</div>
                 </div>
              )}
           </section>
         )}
 
+        {/* FIFA - BRACKET SIMÉTRICO */}
         {activeTab === 'fifa' && (
           <section className="animate-in fade-in duration-500">
-             <div className="bg-neutral-900/40 p-6 rounded-3xl border border-blue-500/20 mb-8 max-w-2xl mx-auto backdrop-blur-sm shadow-[0_0_30px_rgba(59,130,246,0.1)]">
-                <h2 className="text-2xl font-black text-blue-400 mb-4 drop-shadow-md">🏆 Nuevo Torneo</h2>
-                <textarea 
-                    className="w-full h-32 bg-black/40 border border-gray-700 rounded-xl p-4 text-base text-white resize-none mb-4 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition placeholder-gray-600" 
-                    placeholder="Pega la lista de jugadores aquí (Enter para saltar)..." 
-                    value={fifaInput} 
-                    onChange={e=>setFifaInput(e.target.value)}
-                ></textarea>
-                
-                <button onClick={handleCrearTorneoAuto} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black py-4 rounded-xl border-b-4 border-blue-800 active:border-0 active:translate-y-1 transition shadow-lg shadow-blue-900/20 flex items-center justify-center gap-2">
-                    <span>⚡ CREAR CUADRO INTELIGENTE</span>
-                </button>
+             <div className="bg-neutral-900/40 p-6 rounded-3xl border border-blue-500/20 mb-8 max-w-2xl mx-auto backdrop-blur-sm">
+                <h2 className="text-2xl font-black text-blue-400 mb-4">🏆 Nuevo Torneo</h2>
+                <textarea className="w-full h-32 bg-black/40 border border-gray-700 rounded-xl p-4 text-white resize-none mb-4 focus:outline-none focus:border-blue-500 transition" placeholder="Pega lista..." value={fifaInput} onChange={e=>setFifaInput(e.target.value)}></textarea>
+                <button onClick={handleCrearTorneoAuto} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-xl shadow-lg">⚡ GENERAR CUADRO</button>
              </div>
 
              {mayorPaliza && (
-                 <div className="max-w-xl mx-auto mb-8 bg-gradient-to-r from-pink-950/60 to-red-950/60 border border-pink-500/30 p-4 rounded-2xl flex items-center justify-between animate-pulse shadow-[0_0_20px_rgba(236,72,153,0.2)]">
-                     <div className="flex items-center gap-4">
-                         <div className="text-4xl">🤕</div>
-                         <div>
-                             <h3 className="text-pink-400 font-black text-xs uppercase tracking-widest mb-1">Paliza del Torneo</h3>
-                             <p className="font-bold text-white text-sm">
-                                <span className="text-green-400">{mayorPaliza.winner}</span> humilló a <span className="text-red-400">{mayorPaliza.loser}</span>
-                             </p>
-                         </div>
-                     </div>
-                     <div className="bg-black/40 px-4 py-2 rounded-xl border border-pink-500/20">
-                         <span className="font-black text-2xl text-pink-200">{mayorPaliza.result}</span>
-                     </div>
+                 <div className="max-w-xl mx-auto mb-8 bg-gradient-to-r from-pink-950/60 to-red-950/60 border border-pink-500/30 p-4 rounded-2xl flex items-center justify-between animate-pulse">
+                     <div className="flex items-center gap-4"><div className="text-4xl">🤕</div><div><h3 className="text-pink-400 font-black text-xs uppercase tracking-widest">Paliza</h3><p className="font-bold text-white text-sm"><span className="text-green-400">{mayorPaliza.winner}</span> humilló a <span className="text-red-400">{mayorPaliza.loser}</span></p></div></div>
+                     <span className="font-black text-2xl text-pink-200">{mayorPaliza.result}</span>
                  </div>
              )}
 
+             {/* EL BRACKET DE MARIPOSA (5 COLUMNAS) */}
              {fifaMatches.length > 0 && (
                 <div className="w-full overflow-x-auto pb-10">
                      {/* TORNEO PEQUEÑO */}
                      {fifaMatches.length === 3 && (
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center max-w-4xl mx-auto">
-                             <div className="flex flex-col gap-6">
-                                 <h3 className="text-blue-500 text-xs font-bold uppercase text-center tracking-[0.2em]">Semifinales</h3>
-                                 <MatchCard m={fifaMatches[0]} onFinish={finalizarPartido} />
-                                 <MatchCard m={fifaMatches[1]} onFinish={finalizarPartido} />
-                             </div>
-                             <div className="scale-105 md:scale-110 border-l-0 md:border-l border-white/5 pl-0 md:pl-8">
-                                 <div className="flex flex-col items-center">
-                                     <div className="text-4xl animate-bounce mb-2">🏆</div>
-                                     <MatchCard m={fifaMatches[2]} onFinish={finalizarPartido} isFinal />
-                                 </div>
-                             </div>
+                             <div className="flex flex-col gap-6"><MatchCard m={fifaMatches[0]} onFinish={finalizarPartido} /><MatchCard m={fifaMatches[1]} onFinish={finalizarPartido} /></div>
+                             <div className="scale-110"><div className="text-4xl text-center mb-2">🏆</div><MatchCard m={fifaMatches[2]} onFinish={finalizarPartido} isFinal /></div>
                          </div>
                      )}
 
-                     {/* TORNEO GRANDE */}
+                     {/* TORNEO GRANDE SIMÉTRICO */}
                      {fifaMatches.length === 7 && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-12 items-center min-w-[800px] md:min-w-0">
-                            <div className="flex flex-col justify-around gap-4 h-full">
-                                <h3 className="text-blue-500 text-xs font-bold uppercase text-center mb-2 tracking-widest md:hidden">Cuartos</h3>
-                                {[0,1,2,3].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}
-                            </div>
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center min-w-[1000px] md:min-w-0">
                             
-                            <div className="flex flex-col justify-center gap-16 h-full relative">
-                                <h3 className="text-blue-500 text-xs font-bold uppercase text-center mb-2 tracking-widest md:hidden">Semis</h3>
-                                <div className="hidden md:block absolute left-0 top-1/4 w-4 h-1/2 border-l-2 border-t-2 border-b-2 border-white/10 rounded-l-xl -translate-x-full"></div>
-                                <div className="hidden md:block absolute left-0 bottom-1/4 w-4 h-1/2 border-l-2 border-t-2 border-b-2 border-white/10 rounded-l-xl -translate-x-full translate-y-full"></div>
-                                <MatchCard m={fifaMatches[4]} onFinish={finalizarPartido} />
-                                <MatchCard m={fifaMatches[5]} onFinish={finalizarPartido} />
+                            {/* COLUMNA 1 (IZQ): Cuartos A y B */}
+                            <div className="flex flex-col justify-center gap-20">
+                                <div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS A</p><MatchCard m={fifaMatches[0]} onFinish={finalizarPartido} /></div>
+                                <div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS B</p><MatchCard m={fifaMatches[1]} onFinish={finalizarPartido} /></div>
                             </div>
 
-                            <div className="flex flex-col items-center justify-center">
-                                <h3 className="text-yellow-500 text-xs font-bold uppercase text-center mb-4 tracking-widest md:hidden">FINAL</h3>
-                                <div className="scale-110 z-10 p-1 bg-gradient-to-br from-yellow-600 to-orange-600 rounded-xl shadow-[0_0_40px_rgba(234,179,8,0.3)]">
+                            {/* COLUMNA 2 (IZQ-CENTRO): Semi 1 */}
+                            <div className="flex flex-col justify-center h-full relative">
+                                <div className="absolute left-0 top-1/4 w-8 h-1/2 border-l-2 border-t-2 border-b-2 border-white/10 rounded-l-xl opacity-30"></div>
+                                <div className="text-center"><p className="text-xs text-purple-400 font-bold mb-2">SEMIFINAL 1</p><MatchCard m={fifaMatches[4]} onFinish={finalizarPartido} /></div>
+                            </div>
+
+                            {/* COLUMNA 3 (CENTRO): FINAL */}
+                            <div className="flex flex-col items-center justify-center scale-110 z-10">
+                                <div className="text-6xl animate-bounce drop-shadow-glow mb-4">🏆</div>
+                                <div className="bg-gradient-to-br from-yellow-600 to-orange-600 p-1 rounded-xl shadow-[0_0_50px_rgba(234,179,8,0.4)]">
                                      <div className="bg-black rounded-lg p-1">
                                          <MatchCard m={fifaMatches[6]} onFinish={finalizarPartido} isFinal />
                                      </div>
                                 </div>
+                                <p className="text-yellow-500 font-black tracking-widest mt-4">GRAN FINAL</p>
+                            </div>
+
+                             {/* COLUMNA 4 (DER-CENTRO): Semi 2 */}
+                             <div className="flex flex-col justify-center h-full relative">
+                                <div className="absolute right-0 top-1/4 w-8 h-1/2 border-r-2 border-t-2 border-b-2 border-white/10 rounded-r-xl opacity-30"></div>
+                                <div className="text-center"><p className="text-xs text-purple-400 font-bold mb-2">SEMIFINAL 2</p><MatchCard m={fifaMatches[5]} onFinish={finalizarPartido} /></div>
+                            </div>
+
+                            {/* COLUMNA 5 (DER): Cuartos C y D */}
+                            <div className="flex flex-col justify-center gap-20">
+                                <div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS C</p><MatchCard m={fifaMatches[2]} onFinish={finalizarPartido} /></div>
+                                <div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS D</p><MatchCard m={fifaMatches[3]} onFinish={finalizarPartido} /></div>
                             </div>
                         </div>
                      )}
@@ -381,12 +396,12 @@ export default function Home() {
           </section>
         )}
 
+        {/* RULETA */}
         {activeTab === 'castigos' && (
            <section className="max-w-md mx-auto text-center mt-10 animate-in zoom-in duration-300">
-              <div className="bg-black/60 border-2 border-red-600 p-8 rounded-3xl shadow-[0_0_50px_rgba(220,38,38,0.5)] mb-8 relative overflow-hidden">
-                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-30"></div>
-                  <h2 className="text-red-500 font-black uppercase tracking-[0.3em] mb-4 relative z-10">Sentencia</h2>
-                  <p className={`text-2xl md:text-3xl font-black relative z-10 transition-all ${isSpinning?'blur-md text-red-500/50':'text-white scale-110 drop-shadow-glow'}`}>{resultadoRuleta}</p>
+              <div className="bg-black/60 border-2 border-red-600 p-8 rounded-3xl shadow-[0_0_50px_rgba(220,38,38,0.5)] mb-8">
+                  <h2 className="text-red-500 font-black uppercase tracking-[0.3em] mb-4">Sentencia</h2>
+                  <p className={`text-3xl font-black ${isSpinning?'blur-md text-red-500/50':'text-white scale-110 drop-shadow-glow'}`}>{resultadoRuleta}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                   <button disabled={isSpinning} onClick={()=>girarRuleta('soft')} className="bg-neutral-800 p-6 rounded-2xl border border-gray-600 hover:bg-neutral-700 font-bold hover:scale-105 transition shadow-lg">🤡 Reto Soft</button>
@@ -399,59 +414,40 @@ export default function Home() {
   );
 }
 
+// MATCHCARD
 function MatchCard({ m, onFinish, isFinal }: { m?: Match, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean }) {
     const [s1, setS1] = useState("");
     const [s2, setS2] = useState("");
 
-    if (!m) return <div className="bg-gray-900/50 p-2 rounded border border-gray-800 h-16 animate-pulse w-48"></div>;
-
-    const handleConfirm = () => {
-        if (s1 === "" || s2 === "") return;
-        onFinish(m.id, parseInt(s1), parseInt(s2));
-    };
-
+    if (!m) return <div className="bg-gray-900/50 p-2 rounded border border-gray-800 h-16 animate-pulse w-40"></div>;
     const isWaiting = m.p1 === "Esperando..." || m.p2 === "Esperando...";
-    const isBye = m.isBye;
 
-    if (isBye) {
+    if (m.isBye) {
         return (
-            <div className="relative p-3 rounded-xl border border-white/5 bg-neutral-900/30 w-full min-w-[200px] opacity-70">
-                 <div className="absolute -top-2.5 left-3 px-2 py-0.5 text-[9px] uppercase font-black bg-gray-800 text-gray-500 rounded border border-gray-700">
-                    {m.round === 'Q' ? 'Cuartos' : 'Semi'}
-                </div>
-                <div className="text-center py-2">
-                    <p className="text-green-500 font-bold mb-1">✅ {m.winner}</p>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-widest">Pasa de ronda directo</p>
-                </div>
+            <div className="relative p-3 rounded-xl border border-white/5 bg-neutral-900/30 w-full min-w-[180px] opacity-70">
+                <div className="text-center py-2"><p className="text-green-500 font-bold mb-1">✅ {m.winner}</p><p className="text-[9px] text-gray-500 uppercase">Pase Directo</p></div>
             </div>
         )
     }
 
     return (
-        <div className={`relative p-3 rounded-xl border-t border-l border-white/10 shadow-xl w-full min-w-[200px] transition-all duration-300 backdrop-blur-md ${m.winner ? 'bg-blue-900/20 border-blue-500/50 shadow-blue-500/10' : 'bg-neutral-900/60 border-gray-800'}`}>
-            <div className={`absolute -top-2.5 left-3 px-2 py-0.5 text-[9px] uppercase font-black tracking-wider rounded border ${isFinal ? 'bg-yellow-500 text-black border-yellow-400' : 'bg-black text-gray-500 border-gray-800'}`}>
-                {m.round === 'Q' ? 'Cuartos' : m.round === 'S' ? 'Semi' : 'FINAL'}
-            </div>
+        <div className={`relative p-3 rounded-xl border-t border-l border-white/10 shadow-xl w-full min-w-[180px] transition-all backdrop-blur-md ${m.winner ? 'bg-blue-900/20 border-blue-500/50' : 'bg-neutral-900/80 border-gray-800'}`}>
             {m.winner ? (
-                <div className="flex justify-between items-center gap-2 pt-1">
-                    <span className={`text-xs font-bold w-1/3 truncate text-right ${m.winner===m.p1 ? 'text-green-400 drop-shadow-glow' : 'text-gray-500 line-through'}`}>{m.p1}</span>
-                    <div className="bg-black/60 px-2 py-1 rounded text-sm font-black text-white border border-white/10 shadow-inner">{m.score1}-{m.score2}</div>
-                    <span className={`text-xs font-bold w-1/3 truncate text-left ${m.winner===m.p2 ? 'text-green-400 drop-shadow-glow' : 'text-gray-500 line-through'}`}>{m.p2}</span>
+                <div className="flex justify-between items-center gap-1 pt-1">
+                    <span className={`text-xs font-bold w-1/3 truncate text-right ${m.winner===m.p1 ? 'text-green-400' : 'text-gray-500 line-through'}`}>{m.p1}</span>
+                    <div className="bg-black/60 px-2 py-1 rounded text-xs font-black text-white">{m.score1}-{m.score2}</div>
+                    <span className={`text-xs font-bold w-1/3 truncate text-left ${m.winner===m.p2 ? 'text-green-400' : 'text-gray-500 line-through'}`}>{m.p2}</span>
                 </div>
             ) : (
                 <div className="flex flex-col gap-2 mt-1">
-                    <div className="flex justify-between items-center gap-2">
-                        <span className="text-xs font-bold w-16 truncate text-right text-gray-300">{m.p1}</span>
-                        <input type="number" className="w-8 h-8 bg-black/50 text-center rounded text-white border border-gray-700 focus:border-blue-500 text-sm focus:outline-none transition" value={s1} onChange={e => setS1(e.target.value)} disabled={isWaiting}/>
+                    <div className="flex justify-between items-center gap-1">
+                        <span className="text-xs font-bold w-14 truncate text-right text-gray-300">{m.p1}</span>
+                        <input type="number" className="w-7 h-7 bg-black/50 text-center rounded text-white border border-gray-700 text-xs focus:outline-none" value={s1} onChange={e => setS1(e.target.value)} disabled={isWaiting}/>
                         <span className="text-[8px] text-gray-600 font-bold">VS</span>
-                        <input type="number" className="w-8 h-8 bg-black/50 text-center rounded text-white border border-gray-700 focus:border-blue-500 text-sm focus:outline-none transition" value={s2} onChange={e => setS2(e.target.value)} disabled={isWaiting}/>
-                        <span className="text-xs font-bold w-16 truncate text-left text-gray-300">{m.p2}</span>
+                        <input type="number" className="w-7 h-7 bg-black/50 text-center rounded text-white border border-gray-700 text-xs focus:outline-none" value={s2} onChange={e => setS2(e.target.value)} disabled={isWaiting}/>
+                        <span className="text-xs font-bold w-14 truncate text-left text-gray-300">{m.p2}</span>
                     </div>
-                    {!isWaiting && (
-                        <button onClick={handleConfirm} className="w-full bg-blue-600/20 hover:bg-blue-600 text-blue-200 hover:text-white text-[9px] py-1 rounded uppercase font-black tracking-widest transition border border-blue-500/20 hover:border-blue-400">
-                            TERMINAR PARTIDO
-                        </button>
-                    )}
+                    {!isWaiting && <button onClick={()=>s1&&s2&&onFinish(m.id, +s1, +s2)} className="w-full bg-blue-600/20 hover:bg-blue-600 text-blue-200 hover:text-white text-[9px] py-1 rounded uppercase font-black tracking-widest transition">FIN</button>}
                 </div>
             )}
         </div>
