@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "subir": "git add . && git commit -m \"Actualización rápida 🚀\" && git push"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",
