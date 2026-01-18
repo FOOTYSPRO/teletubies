@@ -39,7 +39,7 @@ export default function Home() {
   
   // CASTIGOS & DJ
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
-  const [excusa, setExcusa] = useState<string | null>(null); // Nueva Excusa
+  const [excusa, setExcusa] = useState<string | null>(null);
   const [isSpinning, setIsSpinning] = useState(false);
   const [showDJ, setShowDJ] = useState(false);
 
@@ -48,20 +48,24 @@ export default function Home() {
   const [timerActive, setTimerActive] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // --- LISTAS ---
+  // --- LISTAS MASIVAS ---
   const TEAMS_REAL = [
-    "Man. City 🔵", "Real Madrid 👑", "Bayern Múnich 🔴", "Liverpool 🔴", 
-    "Arsenal 🔴", "Inter Milán ⚫🔵", "PSG 🗼", "FC Barcelona 🔵🔴",
-    "Atlético Madrid 🔴⚪", "B. Leverkusen ⚫🔴", "AC Milan ⚫🔴", "Juventus ⚫⚪",
-    "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Tottenham ⚪"
+    // PREMIER
+    "Man. City 🔵", "Arsenal 🔴", "Liverpool 🔴", "Aston Villa 🦁", "Tottenham ⚪", "Chelsea 🔵", "Man. Utd 🔴", "Newcastle ⚫⚪", "West Ham ⚒️",
+    // LIGA
+    "Real Madrid 👑", "FC Barcelona 🔵🔴", "Atlético Madrid 🔴⚪", "Girona 🔴⚪", "Athletic Club 🦁", "Real Sociedad 🔵⚪", "Real Betis 🟢⚪", "Valencia 🦇", "Sevilla 🔴⚪",
+    // SERIE A
+    "Inter Milán ⚫🔵", "AC Milan ⚫🔴", "Juventus ⚫⚪", "Atalanta ⚫🔵", "AS Roma 🟠🔴", "Napoli 🔵", "Lazio 🦅", "Fiorentina 🟣",
+    // BUNDESLIGA
+    "B. Leverkusen ⚫🔴", "Bayern Múnich 🔴", "Dortmund 🟡⚫", "RB Leipzig ⚪🔴", "Stuttgart ⚪🔴", "E. Frankfurt 🦅",
+    // LIGUE 1 & OTHERS
+    "PSG 🗼", "Monaco 🔴⚪", "Lille 🐶", "Lyon 🦁", "Marseille 🔵⚪", "Benfica 🦅", "Porto 🐉", "Sporting CP 🟢", "Ajax ❌", "PSV 💡", "Feyenoord 🔴⚪"
   ];
 
   const TEAMS_FUNNY = [
-    "Aston Birra", "Nottingham Prisa", "Inter de Mitente", "Vodka Juniors",
-    "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo",
-    "Schalke Te Meto", "Abuelos FC", "Patético de Madrid", "Bajern de Munich",
-    "Real Suciedad", "Olimpique de Marsopa", "West Jamón", "Levante en Barra",
-    "Borussia de la Birra", "Peshownal", "Estrella Coja", "Fenerbache el Vaso"
+    "Aston Birra", "Nottingham Prisa", "Inter de Mitente", "Vodka Juniors", "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo",
+    "Schalke Te Meto", "Abuelos FC", "Patético de Madrid", "Bajern de Munich", "Real Suciedad", "Olimpique de Marsopa", "West Jamón", "Levante en Barra",
+    "Borussia de la Birra", "Peshownal", "Estrella Coja", "Fenerbache el Vaso", "Spartak de Cubatas", "CSKA la Ropa", "Chandal de Munich", "Water de Bremen"
   ];
   
   const listaSoft = ["Haz 10 flexiones 💪", "Manda un audio cantando 🎤", "Baila sin música 30seg 💃", "No puedes hablar 1 ronda 🤐", "Comentarista next game 🎙️", "Enseña última foto carrete 📱", "Sirve bebida a todos 🥤"];
@@ -139,13 +143,15 @@ export default function Home() {
       setTimerActive(true);
   };
 
+  // --- LÓGICA PALIZA CORREGIDA (>= 3 GOLES) ---
   const calcularPaliza = (matches: Match[]) => {
       let maxDiff = 0;
       let palizaData = null;
       matches.forEach(m => {
           if (m && !m.isBye && m.winner && m.score1 !== undefined && m.score2 !== undefined) {
               const diff = Math.abs(m.score1 - m.score2);
-              if (diff > maxDiff) {
+              // AHORA SOLO CUENTA SI LA DIFERENCIA ES >= 3
+              if (diff >= 3 && diff > maxDiff) {
                   maxDiff = diff;
                   const isP1Winner = m.score1 > m.score2;
                   palizaData = { winner: isP1Winner ? m.p1 : m.p2, loser: isP1Winner ? m.p2 : m.p1, diff: diff, result: `${m.score1}-${m.score2}` };
@@ -418,7 +424,7 @@ export default function Home() {
 
              {mayorPaliza && (
                  <div className="max-w-xl mx-auto mb-8 bg-gradient-to-r from-pink-950/60 to-red-950/60 border border-pink-500/30 p-4 rounded-2xl flex items-center justify-between animate-pulse">
-                     <div className="flex items-center gap-4"><div className="text-4xl">🤕</div><div><h3 className="text-pink-400 font-black text-xs uppercase tracking-widest">Paliza</h3><p className="font-bold text-white text-sm"><span className="text-green-400">{mayorPaliza.winner}</span> humilló a <span className="text-red-400">{mayorPaliza.loser}</span></p></div></div>
+                     <div className="flex items-center gap-4"><div className="text-4xl">🤕</div><div><h3 className="text-pink-400 font-black text-xs uppercase tracking-widest">Paliza (3+ Goles)</h3><p className="font-bold text-white text-sm"><span className="text-green-400">{mayorPaliza.winner}</span> humilló a <span className="text-red-400">{mayorPaliza.loser}</span></p></div></div>
                      <span className="font-black text-2xl text-pink-200">{mayorPaliza.result}</span>
                  </div>
              )}
@@ -459,25 +465,16 @@ export default function Home() {
                   <p className={`text-3xl font-black ${isSpinning?'blur-md text-red-500/50':'text-white scale-110 drop-shadow-glow'}`}>{resultadoRuleta}</p>
               </div>
               
-              {/* CRONÓMETRO */}
               <div className="mb-8">
                   <div className="flex justify-center gap-2 mb-2">
                       <button onClick={()=>startTimer(30)} className="bg-gray-800 px-3 py-1 rounded text-xs font-bold hover:bg-gray-700">30s</button>
                       <button onClick={()=>startTimer(60)} className="bg-gray-800 px-3 py-1 rounded text-xs font-bold hover:bg-gray-700">1min</button>
                       <button onClick={()=>setTimeLeft(0)} className="bg-red-900/50 px-3 py-1 rounded text-xs font-bold hover:bg-red-800">Parar</button>
                   </div>
-                  <div className="text-5xl font-mono font-black text-white bg-black/40 py-4 rounded-xl border border-white/10 shadow-inner">
-                      {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
-                  </div>
+                  <div className="text-5xl font-mono font-black text-white bg-black/40 py-4 rounded-xl border border-white/10 shadow-inner">{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}</div>
               </div>
 
-              {/* EXCUSÓMETRO (NUEVO) */}
-              <div className="mb-8">
-                  <button onClick={generarExcusa} className="w-full bg-blue-900/30 hover:bg-blue-900/50 border border-blue-500/30 text-blue-300 font-bold py-3 rounded-xl transition mb-2">
-                      😭 He perdido... Dame una excusa
-                  </button>
-                  {excusa && <div className="bg-blue-950 p-3 rounded-lg border border-blue-500/50 text-white italic animate-in fade-in">"{excusa}"</div>}
-              </div>
+              <div className="mb-8"><button onClick={generarExcusa} className="w-full bg-blue-900/30 hover:bg-blue-900/50 border border-blue-500/30 text-blue-300 font-bold py-3 rounded-xl transition mb-2">😭 He perdido... Dame una excusa</button>{excusa && <div className="bg-blue-950 p-3 rounded-lg border border-blue-500/50 text-white italic animate-in fade-in">"{excusa}"</div>}</div>
 
               <div className="grid grid-cols-2 gap-4">
                   <button disabled={isSpinning} onClick={()=>girarRuleta('soft')} className="bg-neutral-800 p-6 rounded-2xl border border-gray-600 hover:bg-neutral-700 font-bold hover:scale-105 transition shadow-lg">🤡 Reto Soft</button>
@@ -486,56 +483,17 @@ export default function Home() {
            </section>
         )}
 
-        {/* --- NEWS TICKER (NUEVO) --- */}
-        <div className="fixed bottom-0 left-0 w-full bg-black/90 border-t border-purple-500/30 overflow-hidden z-40 py-1">
-            <div className="animate-marquee whitespace-nowrap flex gap-10">
-                {[...NEWS_TICKER, ...NEWS_TICKER].map((news, i) => (
-                    <span key={i} className="text-xs md:text-sm font-bold text-purple-300 uppercase tracking-wider">{news}</span>
-                ))}
-            </div>
-        </div>
-
-        {/* --- BOTONERA TÓXICA (DJ) --- */}
-        <div className="fixed bottom-10 right-4 z-50 flex flex-col items-end gap-2">
-           <button onClick={() => setShowDJ(!showDJ)} className="bg-purple-600 hover:bg-purple-500 text-white p-4 rounded-full shadow-2xl border-2 border-white/20 animate-pulse active:scale-95 transition">
-             🔊
-           </button>
-           {showDJ && (
-             <div className="bg-black/90 p-4 rounded-2xl border border-purple-500/30 backdrop-blur-md shadow-2xl flex flex-col gap-2 animate-in slide-in-from-bottom-5 mb-2">
-               <SoundBtn label="📢 BOCINA" url="https://www.myinstants.com/media/sounds/mlg-airhorn.mp3" color="bg-red-600" />
-               <SoundBtn label="🎻 VIOLÍN" url="https://www.myinstants.com/media/sounds/sad-violin-airhorn.mp3" color="bg-blue-600" />
-               <SoundBtn label="🦗 GRILLOS" url="https://www.myinstants.com/media/sounds/cricket_1.mp3" color="bg-green-600" />
-               <SoundBtn label="👏 APLAUSO" url="https://www.myinstants.com/media/sounds/aplausos_1.mp3" color="bg-yellow-600" />
-               <SoundBtn label="😡 BUUU" url="https://www.myinstants.com/media/sounds/boo.mp3" color="bg-gray-600" />
-               <SoundBtn label="🐐 SIUUU" url="https://www.myinstants.com/media/sounds/siu.mp3" color="bg-neutral-800" />
-             </div>
-           )}
-        </div>
-
+        <div className="fixed bottom-0 left-0 w-full bg-black/90 border-t border-purple-500/30 overflow-hidden z-40 py-1"><div className="animate-marquee whitespace-nowrap flex gap-10">{[...NEWS_TICKER, ...NEWS_TICKER].map((news, i) => (<span key={i} className="text-xs md:text-sm font-bold text-purple-300 uppercase tracking-wider">{news}</span>))}</div></div>
+        <div className="fixed bottom-10 right-4 z-50 flex flex-col items-end gap-2"><button onClick={() => setShowDJ(!showDJ)} className="bg-purple-600 hover:bg-purple-500 text-white p-4 rounded-full shadow-2xl border-2 border-white/20 animate-pulse active:scale-95 transition">🔊</button>{showDJ && (<div className="bg-black/90 p-4 rounded-2xl border border-purple-500/30 backdrop-blur-md shadow-2xl flex flex-col gap-2 animate-in slide-in-from-bottom-5 mb-2"><SoundBtn label="📢 BOCINA" url="https://www.myinstants.com/media/sounds/mlg-airhorn.mp3" color="bg-red-600" /><SoundBtn label="🎻 VIOLÍN" url="https://www.myinstants.com/media/sounds/sad-violin-airhorn.mp3" color="bg-blue-600" /><SoundBtn label="🦗 GRILLOS" url="https://www.myinstants.com/media/sounds/cricket_1.mp3" color="bg-green-600" /><SoundBtn label="👏 APLAUSO" url="https://www.myinstants.com/media/sounds/aplausos_1.mp3" color="bg-yellow-600" /><SoundBtn label="😡 BUUU" url="https://www.myinstants.com/media/sounds/boo.mp3" color="bg-gray-600" /><SoundBtn label="🐐 SIUUU" url="https://www.myinstants.com/media/sounds/siu.mp3" color="bg-neutral-800" /></div>)}</div>
       </div>
-      <style jsx global>{`
-        @keyframes marquee {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        .animate-marquee {
-          animation: marquee 30s linear infinite;
-        }
-      `}</style>
+      <style jsx global>{`@keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } } .animate-marquee { animation: marquee 30s linear infinite; }`}</style>
     </main>
   );
 }
 
 function SoundBtn({ label, url, color }: { label: string, url: string, color: string }) {
-    const play = () => {
-        const audio = new Audio(url);
-        audio.play().catch(e => console.log("Error audio:", e));
-    };
-    return (
-        <button onClick={play} className={`${color} hover:brightness-110 text-white text-[10px] font-bold py-3 px-4 rounded-xl shadow-lg active:scale-95 transition whitespace-nowrap`}>
-            {label}
-        </button>
-    );
+    const play = () => { const audio = new Audio(url); audio.play().catch(e => console.log("Error audio:", e)); };
+    return (<button onClick={play} className={`${color} hover:brightness-110 text-white text-[10px] font-bold py-3 px-4 rounded-xl shadow-lg active:scale-95 transition whitespace-nowrap`}>{label}</button>);
 }
 
 function MatchCard({ m, onFinish, isFinal }: { m?: Match, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean }) {
@@ -556,11 +514,19 @@ function MatchCard({ m, onFinish, isFinal }: { m?: Match, onFinish: (id: number,
             ) : (
                 <div className="flex flex-col gap-2 mt-1">
                     <div className="flex justify-between items-center gap-1">
-                        <div className="w-16 text-right overflow-hidden"><span className="text-xs font-bold block truncate text-gray-300">{m.p1}</span><span className="text-[8px] text-blue-400 block truncate">{m.p1Team}</span><span className="text-[8px] text-gray-500 block truncate">{m.p1Club}</span></div>
+                        <div className="w-16 text-right overflow-hidden">
+                            <span className="text-xs font-bold block truncate text-gray-300">{m.p1}</span>
+                            <span className="text-[8px] text-blue-400 block truncate">{m.p1Team}</span>
+                            <span className="text-[9px] font-black text-yellow-500/90 block truncate">{m.p1Club}</span>
+                        </div>
                         <input type="number" className="w-7 h-7 bg-black/50 text-center rounded text-white border border-gray-700 text-xs focus:outline-none" value={s1} onChange={e => setS1(e.target.value)} disabled={isWaiting}/>
                         <span className="text-[8px] text-gray-600 font-bold">VS</span>
                         <input type="number" className="w-7 h-7 bg-black/50 text-center rounded text-white border border-gray-700 text-xs focus:outline-none" value={s2} onChange={e => setS2(e.target.value)} disabled={isWaiting}/>
-                        <div className="w-16 text-left overflow-hidden"><span className="text-xs font-bold block truncate text-gray-300">{m.p2}</span><span className="text-[8px] text-blue-400 block truncate">{m.p2Team}</span><span className="text-[8px] text-gray-500 block truncate">{m.p2Club}</span></div>
+                        <div className="w-16 text-left overflow-hidden">
+                            <span className="text-xs font-bold block truncate text-gray-300">{m.p2}</span>
+                            <span className="text-[8px] text-blue-400 block truncate">{m.p2Team}</span>
+                            <span className="text-[9px] font-black text-yellow-500/90 block truncate">{m.p2Club}</span>
+                        </div>
                     </div>
                     {!isWaiting && <button onClick={()=>s1&&s2&&onFinish(m.id, +s1, +s2)} className="w-full bg-blue-600/20 hover:bg-blue-600 text-blue-200 hover:text-white text-[9px] py-1 rounded uppercase font-black tracking-widest transition">FIN</button>}
                 </div>
