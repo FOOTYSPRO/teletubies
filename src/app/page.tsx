@@ -40,6 +40,7 @@ export default function Home() {
   // RULETA
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
   const [isSpinning, setIsSpinning] = useState(false);
+  const [showDJ, setShowDJ] = useState(false); // Estado para mostrar/ocultar DJ
 
   // LISTAS
   const TEAMS_REAL = [
@@ -61,6 +62,7 @@ export default function Home() {
 
   const lanzarFiesta = () => {
     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#a864fd', '#29cdff', '#78ff44', '#ff718d', '#fdff6a'] });
+    // Sonido gol local si existe, si no usa la botonera
     const audio = new Audio("/gol.mp3");
     audio.volume = 0.5;
     audio.play().catch(() => {});
@@ -292,7 +294,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-white font-sans pb-24 overflow-x-hidden select-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-neutral-950 to-black">
+    <main className="min-h-screen bg-neutral-950 text-white font-sans pb-32 overflow-x-hidden select-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-neutral-950 to-black">
       <header className="bg-neutral-900/80 backdrop-blur-md sticky top-0 z-50 border-b border-white/10 p-4 shadow-lg shadow-purple-900/10">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
             <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 uppercase tracking-tighter cursor-pointer drop-shadow-[0_2px_2px_rgba(255,255,255,0.3)]" onClick={() => setActiveTab('home')}>
@@ -377,43 +379,14 @@ export default function Home() {
                  </div>
              )}
 
-             {/* RENDERIZADO DEL CUADRO */}
              {fifaMatches.length > 0 && (
                 <div className="w-full">
-                     {/* VISTA MÓVIL (VERTICAL) */}
                      <div className="md:hidden flex flex-col gap-10">
-                        {/* CUARTOS O SEMIS */}
-                        <div>
-                            <h3 className="text-blue-500 font-black text-center mb-4 tracking-widest bg-black/30 py-1 rounded">R1: {fifaMatches.length === 3 ? 'SEMIS' : 'CUARTOS'}</h3>
-                            <div className="flex flex-col gap-3">
-                                {fifaMatches.length === 3 
-                                    ? [0,1].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)
-                                    : [0,1,2,3].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)
-                                }
-                            </div>
-                        </div>
-                        
-                        {/* SEMIS (Solo para torneo grande) */}
-                        {fifaMatches.length === 7 && (
-                            <div>
-                                <h3 className="text-purple-500 font-black text-center mb-4 tracking-widest bg-black/30 py-1 rounded">R2: SEMIFINALES</h3>
-                                <div className="flex flex-col gap-3">
-                                    <MatchCard m={fifaMatches[4]} onFinish={finalizarPartido} />
-                                    <MatchCard m={fifaMatches[5]} onFinish={finalizarPartido} />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* FINAL */}
-                        <div>
-                             <h3 className="text-yellow-500 font-black text-center mb-4 tracking-widest bg-black/30 py-1 rounded">🏆 GRAN FINAL 🏆</h3>
-                             <div className="scale-105 shadow-2xl shadow-yellow-500/20 rounded-xl">
-                                <MatchCard m={fifaMatches[fifaMatches.length === 3 ? 2 : 6]} onFinish={finalizarPartido} isFinal />
-                             </div>
-                        </div>
+                        <div><h3 className="text-blue-500 font-black text-center mb-4 tracking-widest bg-black/30 py-1 rounded">R1: {fifaMatches.length === 3 ? 'SEMIS' : 'CUARTOS'}</h3><div className="flex flex-col gap-3">{fifaMatches.length === 3 ? [0,1].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />) : [0,1,2,3].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}</div></div>
+                        {fifaMatches.length === 7 && (<div><h3 className="text-purple-500 font-black text-center mb-4 tracking-widest bg-black/30 py-1 rounded">R2: SEMIFINALES</h3><div className="flex flex-col gap-3"><MatchCard m={fifaMatches[4]} onFinish={finalizarPartido} /><MatchCard m={fifaMatches[5]} onFinish={finalizarPartido} /></div></div>)}
+                        <div><h3 className="text-yellow-500 font-black text-center mb-4 tracking-widest bg-black/30 py-1 rounded">🏆 GRAN FINAL 🏆</h3><div className="scale-105 shadow-2xl shadow-yellow-500/20 rounded-xl"><MatchCard m={fifaMatches[fifaMatches.length === 3 ? 2 : 6]} onFinish={finalizarPartido} isFinal /></div></div>
                      </div>
 
-                     {/* VISTA ORDENADOR (MARIPOSA) */}
                      <div className="hidden md:block overflow-x-auto pb-10">
                         {fifaMatches.length === 3 ? (
                              <div className="grid grid-cols-2 gap-8 items-center max-w-4xl mx-auto">
@@ -422,26 +395,11 @@ export default function Home() {
                              </div>
                         ) : (
                             <div className="grid grid-cols-5 gap-4 items-center min-w-[1000px]">
-                                <div className="flex flex-col justify-center gap-20">
-                                    <div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS A</p><MatchCard m={fifaMatches[0]} onFinish={finalizarPartido} /></div>
-                                    <div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS B</p><MatchCard m={fifaMatches[1]} onFinish={finalizarPartido} /></div>
-                                </div>
-                                <div className="flex flex-col justify-center h-full relative">
-                                    <div className="absolute left-0 top-1/4 w-8 h-1/2 border-l-2 border-t-2 border-b-2 border-white/10 rounded-l-xl opacity-30"></div>
-                                    <div className="text-center"><p className="text-xs text-purple-400 font-bold mb-2">SEMIFINAL 1</p><MatchCard m={fifaMatches[4]} onFinish={finalizarPartido} /></div>
-                                </div>
-                                <div className="flex flex-col items-center justify-center scale-110 z-10">
-                                    <div className="text-6xl animate-bounce drop-shadow-glow mb-4">🏆</div>
-                                    <div className="bg-gradient-to-br from-yellow-600 to-orange-600 p-1 rounded-xl shadow-[0_0_50px_rgba(234,179,8,0.4)]"><div className="bg-black rounded-lg p-1"><MatchCard m={fifaMatches[6]} onFinish={finalizarPartido} isFinal /></div></div>
-                                </div>
-                                <div className="flex flex-col justify-center h-full relative">
-                                    <div className="absolute right-0 top-1/4 w-8 h-1/2 border-r-2 border-t-2 border-b-2 border-white/10 rounded-r-xl opacity-30"></div>
-                                    <div className="text-center"><p className="text-xs text-purple-400 font-bold mb-2">SEMIFINAL 2</p><MatchCard m={fifaMatches[5]} onFinish={finalizarPartido} /></div>
-                                </div>
-                                <div className="flex flex-col justify-center gap-20">
-                                    <div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS C</p><MatchCard m={fifaMatches[2]} onFinish={finalizarPartido} /></div>
-                                    <div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS D</p><MatchCard m={fifaMatches[3]} onFinish={finalizarPartido} /></div>
-                                </div>
+                                <div className="flex flex-col justify-center gap-20"><div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS A</p><MatchCard m={fifaMatches[0]} onFinish={finalizarPartido} /></div><div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS B</p><MatchCard m={fifaMatches[1]} onFinish={finalizarPartido} /></div></div>
+                                <div className="flex flex-col justify-center h-full relative"><div className="absolute left-0 top-1/4 w-8 h-1/2 border-l-2 border-t-2 border-b-2 border-white/10 rounded-l-xl opacity-30"></div><div className="text-center"><p className="text-xs text-purple-400 font-bold mb-2">SEMIFINAL 1</p><MatchCard m={fifaMatches[4]} onFinish={finalizarPartido} /></div></div>
+                                <div className="flex flex-col items-center justify-center scale-110 z-10"><div className="text-6xl animate-bounce drop-shadow-glow mb-4">🏆</div><div className="bg-gradient-to-br from-yellow-600 to-orange-600 p-1 rounded-xl shadow-[0_0_50px_rgba(234,179,8,0.4)]"><div className="bg-black rounded-lg p-1"><MatchCard m={fifaMatches[6]} onFinish={finalizarPartido} isFinal /></div></div></div>
+                                <div className="flex flex-col justify-center h-full relative"><div className="absolute right-0 top-1/4 w-8 h-1/2 border-r-2 border-t-2 border-b-2 border-white/10 rounded-r-xl opacity-30"></div><div className="text-center"><p className="text-xs text-purple-400 font-bold mb-2">SEMIFINAL 2</p><MatchCard m={fifaMatches[5]} onFinish={finalizarPartido} /></div></div>
+                                <div className="flex flex-col justify-center gap-20"><div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS C</p><MatchCard m={fifaMatches[2]} onFinish={finalizarPartido} /></div><div className="text-center"><p className="text-xs text-blue-500 font-bold mb-2">CUARTOS D</p><MatchCard m={fifaMatches[3]} onFinish={finalizarPartido} /></div></div>
                             </div>
                         )}
                      </div>
@@ -462,11 +420,43 @@ export default function Home() {
               </div>
            </section>
         )}
+
+        {/* --- BOTONERA TÓXICA (DJ) --- */}
+        <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
+           <button onClick={() => setShowDJ(!showDJ)} className="bg-purple-600 hover:bg-purple-500 text-white p-4 rounded-full shadow-2xl border-2 border-white/20 animate-pulse active:scale-95 transition">
+             🔊 DJ
+           </button>
+           {showDJ && (
+             <div className="bg-black/90 p-4 rounded-2xl border border-purple-500/30 backdrop-blur-md shadow-2xl flex flex-col gap-2 animate-in slide-in-from-bottom-5">
+               <SoundBtn label="📢 BOCINA" url="https://www.myinstants.com/media/sounds/mlg-airhorn.mp3" color="bg-red-600" />
+               <SoundBtn label="🎻 VIOLÍN" url="https://www.myinstants.com/media/sounds/sad-violin-airhorn.mp3" color="bg-blue-600" />
+               <SoundBtn label="🦗 GRILLOS" url="https://www.myinstants.com/media/sounds/cricket_1.mp3" color="bg-green-600" />
+               <SoundBtn label="👏 APLAUSO" url="https://www.myinstants.com/media/sounds/aplausos_1.mp3" color="bg-yellow-600" />
+               <SoundBtn label="😡 BUUU" url="https://www.myinstants.com/media/sounds/boo.mp3" color="bg-gray-600" />
+               <SoundBtn label="🐐 SIUUU" url="https://www.myinstants.com/media/sounds/siu.mp3" color="bg-neutral-800" />
+             </div>
+           )}
+        </div>
+
       </div>
     </main>
   );
 }
 
+// COMPONENTE BOTÓN DE SONIDO
+function SoundBtn({ label, url, color }: { label: string, url: string, color: string }) {
+    const play = () => {
+        const audio = new Audio(url);
+        audio.play().catch(e => console.log("Error audio:", e));
+    };
+    return (
+        <button onClick={play} className={`${color} hover:brightness-110 text-white text-[10px] font-bold py-3 px-4 rounded-xl shadow-lg active:scale-95 transition whitespace-nowrap`}>
+            {label}
+        </button>
+    );
+}
+
+// COMPONENTE TARJETA PARTIDO
 function MatchCard({ m, onFinish, isFinal }: { m?: Match, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean }) {
     const [s1, setS1] = useState("");
     const [s2, setS2] = useState("");
