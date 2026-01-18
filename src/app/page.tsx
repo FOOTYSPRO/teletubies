@@ -1,5 +1,5 @@
 ﻿"use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { 
   doc, onSnapshot, setDoc, collection, query, orderBy, increment, 
@@ -37,32 +37,39 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [mayorPaliza, setMayorPaliza] = useState<{winner: string, loser: string, diff: number, result: string} | null>(null);
   
-  // RULETA
+  // CASTIGOS & CAOS
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
+  const [chaosRule, setChaosRule] = useState<string | null>(null); // Nueva Regla del Caos
   const [isSpinning, setIsSpinning] = useState(false);
-  const [showDJ, setShowDJ] = useState(false); // Estado para mostrar/ocultar DJ
+  const [showDJ, setShowDJ] = useState(false);
 
-  // LISTAS
-  const TEAMS_REAL = [
-    "Man. City 🔵", "Real Madrid 👑", "Bayern Múnich 🔴", "Liverpool 🔴", 
-    "Arsenal 🔴", "Inter Milán ⚫🔵", "PSG 🗼", "FC Barcelona 🔵🔴",
-    "Atlético Madrid 🔴⚪", "B. Leverkusen ⚫🔴", "AC Milan ⚫🔴", "Juventus ⚫⚪",
-    "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Tottenham ⚪"
-  ];
+  // CRONÓMETRO
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [timerActive, setTimerActive] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const TEAMS_FUNNY = [
-    "Aston Birra", "Nottingham Prisa", "Inter de Mitente", "Vodka Juniors",
-    "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo",
-    "Schalke Te Meto", "Abuelos FC", "Patético de Madrid", "Bajern de Munich",
-    "Real Suciedad", "Olimpique de Marsopa", "West Jamón", "Levante en Barra"
-  ];
+  // --- LISTAS ---
+  const TEAMS_REAL = ["Man. City 🔵", "Real Madrid 👑", "Bayern Múnich 🔴", "Liverpool 🔴", "Arsenal 🔴", "Inter Milán ⚫🔵", "PSG 🗼", "FC Barcelona 🔵🔴", "Atlético Madrid 🔴⚪", "B. Leverkusen ⚫🔴", "AC Milan ⚫🔴", "Juventus ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Tottenham ⚪"];
+  const TEAMS_FUNNY = ["Aston Birra", "Nottingham Prisa", "Inter de Mitente", "Vodka Juniors", "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo", "Schalke Te Meto", "Abuelos FC", "Patético de Madrid", "Bajern de Munich", "Real Suciedad", "Olimpique de Marsopa", "West Jamón", "Levante en Barra"];
   
   const listaSoft = ["Haz 10 flexiones 💪", "Manda un audio cantando 🎤", "Baila sin música 30seg 💃", "No puedes hablar 1 ronda 🤐", "Comentarista next game 🎙️", "Enseña última foto carrete 📱", "Sirve bebida a todos 🥤"];
   const listaChupitos = ["🥃 1 Chupito", "🥃🥃 2 Chupitos", "🌊 ¡Cascada!", "🤝 Elige compañero", "🚫 Te libras", "💀 CHUPITO MORTAL"];
+  
+  // NUEVA: LISTA DEL CAOS
+  const CHAOS_RULES = [
+      "⚽ Goles de fuera del área valen DOBLE",
+      "🤐 Prohibido hablar durante el partido",
+      "🗿 Se juega de pie (sin sentarse)",
+      "🧤 El que gane, tira un penalti extra",
+      "🔄 Cambia de mando si te meten gol",
+      "🍺 El que reciba gol, bebe un trago",
+      "🎮 Juega con la cámara 'Pro'",
+      "🦶 Solo valen goles de cabeza/volea",
+      "🥅 Portero delantero (saca al portero)"
+  ];
 
   const lanzarFiesta = () => {
     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#a864fd', '#29cdff', '#78ff44', '#ff718d', '#fdff6a'] });
-    // Sonido gol local si existe, si no usa la botonera
     const audio = new Audio("/gol.mp3");
     audio.volume = 0.5;
     audio.play().catch(() => {});
@@ -77,6 +84,7 @@ export default function Home() {
         setEquipoB(data.equipoB || []);
         setFifaMatches(Array.isArray(data.fifaMatches) ? data.fifaMatches : []);
         if (data.ultimoCastigo) setResultadoRuleta(data.ultimoCastigo);
+        if (data.chaosRule) setChaosRule(data.chaosRule); // Sincronizar Regla Caos
         if (data.fifaMatches && Array.isArray(data.fifaMatches)) calcularPaliza(data.fifaMatches);
       }
     });
@@ -99,6 +107,23 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
+  // --- CRONÓMETRO LOGIC ---
+  useEffect(() => {
+      if (timerActive && timeLeft > 0) {
+          timerRef.current = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+      } else if (timeLeft === 0 && timerActive) {
+          setTimerActive(false);
+          new Audio("https://www.myinstants.com/media/sounds/ding-sound-effect_2.mp3").play().catch(()=>{});
+          confetti({ particleCount: 50, colors: ['#ffffff'] });
+      }
+      return () => clearTimeout(timerRef.current!);
+  }, [timeLeft, timerActive]);
+
+  const startTimer = (seconds: number) => {
+      setTimeLeft(seconds);
+      setTimerActive(true);
+  };
+
   const calcularPaliza = (matches: Match[]) => {
       let maxDiff = 0;
       let palizaData = null;
@@ -115,10 +140,21 @@ export default function Home() {
       setMayorPaliza(palizaData);
   };
 
+  // --- GENERAR CAOS ---
+  const generarReglaCaos = async () => {
+      const rule = CHAOS_RULES[Math.floor(Math.random() * CHAOS_RULES.length)];
+      setChaosRule(rule);
+      await setDoc(doc(db, "sala", "principal"), { chaosRule: rule }, { merge: true });
+  };
+
+  const limpiarCaos = async () => {
+      setChaosRule(null);
+      await setDoc(doc(db, "sala", "principal"), { chaosRule: null }, { merge: true });
+  };
+
   const handleCrearTorneoAuto = async () => {
     try {
         let nombres = fifaInput.split(/[\n,]+/).map((n) => n.trim()).filter((n) => n);
-        
         if (nombres.length < 2) return alert("❌ Mínimo 2 jugadores.");
         if (nombres.length > 8) return alert("❌ Máximo 8 jugadores.");
 
@@ -135,8 +171,8 @@ export default function Home() {
             const isBye = shuffledPlayers[idx] === BYE_NAME;
             return {
                 name: shuffledPlayers[idx],
-                team: isBye ? null : (shuffledTeams[idx] || "Equipo Random"),
-                club: isBye ? null : (shuffledClubs[idx] || "Club Random")
+                team: isBye ? null : (shuffledTeams[idx] || "Random"),
+                club: isBye ? null : (shuffledClubs[idx] || "Random")
             };
         };
 
@@ -199,7 +235,7 @@ export default function Home() {
     
     const isP1Winner = s1 > s2;
     const winner = isP1Winner ? currentMatch.p1 : currentMatch.p2;
-    const winnerTeam = (isP1Winner ? currentMatch.p1Team : currentMatch.p2Team) || null; 
+    const winnerTeam = (isP1Winner ? currentMatch.p1Team : currentMatch.p2Team) || null;
     const winnerClub = (isP1Winner ? currentMatch.p1Club : currentMatch.p2Club) || null;
 
     try {
@@ -277,7 +313,7 @@ export default function Home() {
 
   const limpiarPizarra = async () => {
       const batch = writeBatch(db);
-      batch.set(doc(db, "sala", "principal"), { equipoA: [], equipoB: [], fifaMatches: [], ultimoCastigo: "Esperando..." });
+      batch.set(doc(db, "sala", "principal"), { equipoA: [], equipoB: [], fifaMatches: [], ultimoCastigo: "Esperando...", chaosRule: null });
       await batch.commit();
   };
 
@@ -372,6 +408,23 @@ export default function Home() {
                 <button onClick={handleCrearTorneoAuto} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-xl shadow-lg">⚡ GENERAR CUADRO + EQUIPOS</button>
              </div>
 
+             {/* TARJETA DEL CAOS */}
+             <div className="max-w-xl mx-auto mb-8 relative">
+                 {chaosRule ? (
+                     <div className="bg-gradient-to-r from-orange-600 to-red-600 p-6 rounded-2xl shadow-[0_0_40px_rgba(234,88,12,0.4)] animate-in zoom-in">
+                         <div className="flex justify-between items-start mb-2">
+                             <h3 className="text-white font-black uppercase tracking-widest text-sm">🔥 REGLA DEL CAOS ACTIVA</h3>
+                             <button onClick={limpiarCaos} className="text-xs text-white/70 hover:text-white bg-black/20 px-2 py-1 rounded">Desactivar</button>
+                         </div>
+                         <p className="text-2xl font-black text-white text-center drop-shadow-md">{chaosRule}</p>
+                     </div>
+                 ) : (
+                     <button onClick={generarReglaCaos} className="w-full bg-neutral-800 hover:bg-orange-900/30 border border-orange-500/30 border-dashed text-orange-400 font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                         <span>🃏 ACTIVAR CARTA DEL CAOS</span>
+                     </button>
+                 )}
+             </div>
+
              {mayorPaliza && (
                  <div className="max-w-xl mx-auto mb-8 bg-gradient-to-r from-pink-950/60 to-red-950/60 border border-pink-500/30 p-4 rounded-2xl flex items-center justify-between animate-pulse">
                      <div className="flex items-center gap-4"><div className="text-4xl">🤕</div><div><h3 className="text-pink-400 font-black text-xs uppercase tracking-widest">Paliza</h3><p className="font-bold text-white text-sm"><span className="text-green-400">{mayorPaliza.winner}</span> humilló a <span className="text-red-400">{mayorPaliza.loser}</span></p></div></div>
@@ -414,6 +467,19 @@ export default function Home() {
                   <h2 className="text-red-500 font-black uppercase tracking-[0.3em] mb-4">Sentencia</h2>
                   <p className={`text-3xl font-black ${isSpinning?'blur-md text-red-500/50':'text-white scale-110 drop-shadow-glow'}`}>{resultadoRuleta}</p>
               </div>
+              
+              {/* CRONÓMETRO */}
+              <div className="mb-8">
+                  <div className="flex justify-center gap-2 mb-2">
+                      <button onClick={()=>startTimer(30)} className="bg-gray-800 px-3 py-1 rounded text-xs font-bold hover:bg-gray-700">30s</button>
+                      <button onClick={()=>startTimer(60)} className="bg-gray-800 px-3 py-1 rounded text-xs font-bold hover:bg-gray-700">1min</button>
+                      <button onClick={()=>setTimeLeft(0)} className="bg-red-900/50 px-3 py-1 rounded text-xs font-bold hover:bg-red-800">Parar</button>
+                  </div>
+                  <div className="text-5xl font-mono font-black text-white bg-black/40 py-4 rounded-xl border border-white/10 shadow-inner">
+                      {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+                  </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                   <button disabled={isSpinning} onClick={()=>girarRuleta('soft')} className="bg-neutral-800 p-6 rounded-2xl border border-gray-600 hover:bg-neutral-700 font-bold hover:scale-105 transition shadow-lg">🤡 Reto Soft</button>
                   <button disabled={isSpinning} onClick={()=>girarRuleta('chupito')} className="bg-red-950 p-6 rounded-2xl border border-red-600 hover:bg-red-900 font-bold text-red-200 hover:scale-105 transition shadow-lg shadow-red-900/40">🥃 Chupito</button>
@@ -443,7 +509,6 @@ export default function Home() {
   );
 }
 
-// COMPONENTE BOTÓN DE SONIDO
 function SoundBtn({ label, url, color }: { label: string, url: string, color: string }) {
     const play = () => {
         const audio = new Audio(url);
@@ -456,7 +521,6 @@ function SoundBtn({ label, url, color }: { label: string, url: string, color: st
     );
 }
 
-// COMPONENTE TARJETA PARTIDO
 function MatchCard({ m, onFinish, isFinal }: { m?: Match, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean }) {
     const [s1, setS1] = useState("");
     const [s2, setS2] = useState("");
