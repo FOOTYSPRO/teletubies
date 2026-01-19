@@ -37,7 +37,7 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [mayorPaliza, setMayorPaliza] = useState<{winner: string, loser: string, diff: number, result: string} | null>(null);
   
-  // CASTIGOS & DJ
+  // EXTRA
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("☠️ Esperando víctima...");
   const [excusa, setExcusa] = useState<string | null>(null);
   const [isSpinning, setIsSpinning] = useState(false);
@@ -48,52 +48,14 @@ export default function Home() {
   const [timerActive, setTimerActive] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // --- LISTAS MASIVAS ---
-  const TEAMS_REAL = [
-    // PREMIER
-    "Man. City 🔵", "Arsenal 🔴", "Liverpool 🔴", "Aston Villa 🦁", "Tottenham ⚪", "Chelsea 🔵", "Man. Utd 🔴", "Newcastle ⚫⚪", "West Ham ⚒️",
-    // LIGA
-    "Real Madrid 👑", "FC Barcelona 🔵🔴", "Atlético Madrid 🔴⚪", "Girona 🔴⚪", "Athletic Club 🦁", "Real Sociedad 🔵⚪", "Real Betis 🟢⚪", "Valencia 🦇", "Sevilla 🔴⚪",
-    // SERIE A
-    "Inter Milán ⚫🔵", "AC Milan ⚫🔴", "Juventus ⚫⚪", "Atalanta ⚫🔵", "AS Roma 🟠🔴", "Napoli 🔵", "Lazio 🦅", "Fiorentina 🟣",
-    // BUNDESLIGA
-    "B. Leverkusen ⚫🔴", "Bayern Múnich 🔴", "Dortmund 🟡⚫", "RB Leipzig ⚪🔴", "Stuttgart ⚪🔴", "E. Frankfurt 🦅",
-    // LIGUE 1 & OTHERS
-    "PSG 🗼", "Monaco 🔴⚪", "Lille 🐶", "Lyon 🦁", "Marseille 🔵⚪", "Benfica 🦅", "Porto 🐉", "Sporting CP 🟢", "Ajax ❌", "PSV 💡", "Feyenoord 🔴⚪"
-  ];
-
-  const TEAMS_FUNNY = [
-    "Aston Birra", "Nottingham Prisa", "Inter de Mitente", "Vodka Juniors", "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo",
-    "Schalke Te Meto", "Abuelos FC", "Patético de Madrid", "Bajern de Munich", "Real Suciedad", "Olimpique de Marsopa", "West Jamón", "Levante en Barra",
-    "Borussia de la Birra", "Peshownal", "Estrella Coja", "Fenerbache el Vaso", "Spartak de Cubatas", "CSKA la Ropa", "Chandal de Munich", "Water de Bremen"
-  ];
+  // --- LISTAS ---
+  const TEAMS_REAL = ["Man. City 🔵", "Real Madrid 👑", "Bayern Múnich 🔴", "Liverpool 🔴", "Arsenal 🔴", "Inter Milán ⚫🔵", "PSG 🗼", "FC Barcelona 🔵🔴", "Atlético Madrid 🔴⚪", "B. Leverkusen ⚫🔴", "AC Milan ⚫🔴", "Juventus ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Tottenham ⚪", "Aston Villa 🦁", "Newcastle ⚫⚪", "West Ham ⚒️", "Benfica 🦅", "Porto 🐉", "Sporting CP 🟢", "Ajax ❌", "PSV 💡"];
+  const TEAMS_FUNNY = ["Aston Birra", "Nottingham Prisa", "Inter de Mitente", "Vodka Juniors", "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo", "Schalke Te Meto", "Abuelos FC", "Patético de Madrid", "Bajern de Munich", "Real Suciedad", "Olimpique de Marsopa", "West Jamón", "Levante en Barra", "Borussia de la Birra", "Peshownal", "Estrella Coja", "Fenerbache el Vaso"];
   
   const listaSoft = ["Haz 10 flexiones 💪", "Manda un audio cantando 🎤", "Baila sin música 30seg 💃", "No puedes hablar 1 ronda 🤐", "Comentarista next game 🎙️", "Enseña última foto carrete 📱", "Sirve bebida a todos 🥤"];
   const listaChupitos = ["🥃 1 Chupito", "🥃🥃 2 Chupitos", "🌊 ¡Cascada!", "🤝 Elige compañero", "🚫 Te libras", "💀 CHUPITO MORTAL"];
-
-  const EXCUSAS = [
-      "El mando tiene el R2 pillado...", "Es que había lag.", "El handicap de este juego es increíble.",
-      "Me daba el sol en la cara.", "Estaba probando tácticas.", "No quería humillarte.",
-      "El árbitro está comprado.", "Mi jugador se quedó bugueado.", "No es mi mando habitual.",
-      "Tengo los dedos fríos.", "Es que tú juegas con 5 defensas, rata.", "El portero no tiene manos."
-  ];
-
-  const NEWS_TICKER = [
-      "🚨 ÚLTIMA HORA: Se busca la dignidad de los perdedores en objetos perdidos.",
-      "⚽ MERCADO: El Aston Birra ofrece 2 pipas por el fichaje estrella.",
-      "⚠️ ATENCIÓN: Jugar con 5 defensas está penado con cárcel.",
-      "👀 OJO: Se rumorea que el líder del ranking hace trampas.",
-      "🎙️ DECLARACIONES: 'El FIFA está roto', asegura el que acaba de perder 5-0.",
-      "🏆 CHAMPIONS: La orejona busca dueño (y no eres tú).",
-      "🚑 PARTE MÉDICO: Varios pulgares lesionados tras el último partido."
-  ];
-
-  const lanzarFiesta = () => {
-    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#a864fd', '#29cdff', '#78ff44', '#ff718d', '#fdff6a'] });
-    const audio = new Audio("/gol.mp3");
-    audio.volume = 0.5;
-    audio.play().catch(() => {});
-  };
+  const EXCUSAS = ["El mando tiene el R2 pillado...", "Es que había lag.", "El handicap de este juego es increíble.", "Me daba el sol en la cara.", "Estaba probando tácticas.", "No quería humillarte.", "El árbitro está comprado.", "Mi jugador se quedó bugueado.", "No es mi mando habitual.", "Tengo los dedos fríos.", "Es que tú juegas con 5 defensas, rata.", "El portero no tiene manos."];
+  const NEWS_TICKER = ["🚨 ÚLTIMA HORA: Se busca la dignidad de los perdedores en objetos perdidos.", "⚽ MERCADO: El Aston Birra ofrece 2 pipas por el fichaje estrella.", "⚠️ ATENCIÓN: Jugar con 5 defensas está penado con cárcel.", "👀 OJO: Se rumorea que el líder del ranking hace trampas.", "🎙️ DECLARACIONES: 'El FIFA está roto', asegura el que acaba de perder 5-0.", "🏆 CHAMPIONS: La orejona busca dueño (y no eres tú).", "🚑 PARTE MÉDICO: Varios pulgares lesionados tras el último partido."];
 
   // --- LISTENERS ---
   useEffect(() => {
@@ -126,7 +88,6 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  // --- CRONÓMETRO LOGIC ---
   useEffect(() => {
       if (timerActive && timeLeft > 0) {
           timerRef.current = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
@@ -138,19 +99,12 @@ export default function Home() {
       return () => clearTimeout(timerRef.current!);
   }, [timeLeft, timerActive]);
 
-  const startTimer = (seconds: number) => {
-      setTimeLeft(seconds);
-      setTimerActive(true);
-  };
-
-  // --- LÓGICA PALIZA CORREGIDA (>= 3 GOLES) ---
   const calcularPaliza = (matches: Match[]) => {
       let maxDiff = 0;
       let palizaData = null;
       matches.forEach(m => {
           if (m && !m.isBye && m.winner && m.score1 !== undefined && m.score2 !== undefined) {
               const diff = Math.abs(m.score1 - m.score2);
-              // AHORA SOLO CUENTA SI LA DIFERENCIA ES >= 3
               if (diff >= 3 && diff > maxDiff) {
                   maxDiff = diff;
                   const isP1Winner = m.score1 > m.score2;
@@ -169,7 +123,6 @@ export default function Home() {
 
         let size = 8;
         if (nombres.length <= 4) size = 4;
-        
         while (nombres.length < size) nombres.push(BYE_NAME);
         
         const shuffledPlayers = [...nombres].sort(() => Math.random() - 0.5);
@@ -180,8 +133,8 @@ export default function Home() {
             const isBye = shuffledPlayers[idx] === BYE_NAME;
             return {
                 name: shuffledPlayers[idx],
-                team: isBye ? null : (shuffledTeams[idx] || "Random"),
-                club: isBye ? null : (shuffledClubs[idx] || "Random")
+                team: isBye ? null : (shuffledTeams[idx] || "Equipo Random"),
+                club: isBye ? null : (shuffledClubs[idx] || "Club Random")
             };
         };
 
@@ -283,6 +236,7 @@ export default function Home() {
       const lastId = isSmall ? 2 : 6;
       if (matchId === lastId) {
           confetti({ particleCount: 500, spread: 100 });
+          const audio = new Audio("/gol.mp3"); audio.volume = 0.5; audio.play().catch(()=>{});
           await addDoc(collection(db, "history"), {
               winner: winner,
               winnerTeam: winnerTeam || "Sin Equipo",
@@ -290,7 +244,8 @@ export default function Home() {
               type: isSmall ? "Express (4p)" : "Oficial (8p)"
           });
       } else {
-          lanzarFiesta();
+          confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#a864fd', '#29cdff', '#78ff44', '#ff718d', '#fdff6a'] });
+          const audio = new Audio("/gol.mp3"); audio.volume = 0.5; audio.play().catch(()=>{});
       }
 
     } catch (e) { console.error(e); }
@@ -325,42 +280,40 @@ export default function Home() {
     setPachangaInput(""); 
   };
 
-  const limpiarPizarra = async () => {
-      const batch = writeBatch(db);
-      batch.set(doc(db, "sala", "principal"), { equipoA: [], equipoB: [], fifaMatches: [], ultimoCastigo: "Esperando..." });
-      await batch.commit();
-  };
-
-  const borrarTodaTemporada = async () => {
-    if(!confirm("⛔ ¡PELIGRO! ¿Borrar Ranking y Palmarés?")) return;
-    const batch = writeBatch(db);
-    const rankingSnap = await getDocs(query(collection(db, "ranking")));
-    rankingSnap.forEach((doc) => batch.delete(doc.ref));
-    const historySnap = await getDocs(query(collection(db, "history")));
-    historySnap.forEach((doc) => batch.delete(doc.ref));
-    batch.set(doc(db, "sala", "principal"), { equipoA: [], equipoB: [], fifaMatches: [], ultimoCastigo: "..." });
-    await batch.commit();
-    alert("Temporada borrada.");
-  };
+  const startTimer = (seconds: number) => { setTimeLeft(seconds); setTimerActive(true); };
+  const limpiarPizarra = async () => { await writeBatch(db).set(doc(db, "sala", "principal"), { equipoA: [], equipoB: [], fifaMatches: [], ultimoCastigo: "Esperando..." }).commit(); };
+  const borrarTodaTemporada = async () => { if(!confirm("⚠️ ¿Borrar Ranking?")) return; const b=writeBatch(db); (await getDocs(query(collection(db,"ranking")))).forEach(d=>b.delete(d.ref)); (await getDocs(query(collection(db,"history")))).forEach(d=>b.delete(d.ref)); b.set(doc(db,"sala","principal"),{equipoA:[],equipoB:[],fifaMatches:[],ultimoCastigo:"..."}); await b.commit(); alert("Borrado."); };
 
   return (
     <main className="min-h-screen bg-neutral-950 text-white font-sans pb-32 overflow-x-hidden select-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-neutral-950 to-black">
       <header className="bg-neutral-900/80 backdrop-blur-md sticky top-0 z-50 border-b border-white/10 p-4 shadow-lg shadow-purple-900/10">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-            <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 uppercase tracking-tighter cursor-pointer drop-shadow-[0_2px_2px_rgba(255,255,255,0.3)]" onClick={() => setActiveTab('home')}>
-                Proyecto Teletubies
-            </h1>
-            <nav className="flex bg-black/60 p-1 rounded-2xl gap-1 overflow-x-auto max-w-full border border-white/5">
+            
+            {/* CABECERA MÓVIL: TÍTULO + BOTONES RESET ARRIBA */}
+            <div className="flex justify-between items-center w-full">
+                <h1 className="text-2xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 uppercase tracking-tighter cursor-pointer drop-shadow-[0_2px_2px_rgba(255,255,255,0.3)]" onClick={() => setActiveTab('home')}>
+                    Proyecto Teletubies
+                </h1>
+                
+                {/* BOTONES RESET (Visibles siempre) */}
+                <div className="flex gap-2">
+                    <button onClick={limpiarPizarra} className="bg-neutral-800 hover:bg-neutral-700 border border-gray-600 text-white px-3 py-2 rounded-lg transition" title="Limpiar Torneo">
+                        🔄
+                    </button>
+                    <button onClick={borrarTodaTemporada} className="bg-red-950/30 hover:bg-red-900/50 border border-red-900/50 text-red-500 px-3 py-2 rounded-lg transition" title="Hard Reset">
+                        ⛔
+                    </button>
+                </div>
+            </div>
+
+            {/* NAV TABS (Debajo en móvil, lateral en PC) */}
+            <nav className="flex bg-black/60 p-1 rounded-2xl gap-1 overflow-x-auto max-w-full border border-white/5 w-full md:w-auto">
                 {['home', 'pachanga', 'fifa', 'castigos'].map((tab) => (
-                    <button key={tab} onClick={() => setActiveTab(tab as Tab)} className={`px-4 py-2 rounded-xl font-bold text-xs uppercase transition-all duration-300 ${activeTab === tab ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.5)]' : 'text-gray-400 hover:text-white'}`}>
+                    <button key={tab} onClick={() => setActiveTab(tab as Tab)} className={`flex-1 md:flex-none px-4 py-2 rounded-xl font-bold text-xs uppercase transition-all duration-300 ${activeTab === tab ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.5)]' : 'text-gray-400 hover:text-white'}`}>
                         {tab}
                     </button>
                 ))}
             </nav>
-            <div className="flex gap-2">
-                <button onClick={limpiarPizarra} className="hidden md:flex items-center gap-1 bg-neutral-800 hover:bg-neutral-700 border border-gray-600 text-xs text-white font-bold px-3 py-2 rounded-lg transition">🔄 Limpiar</button>
-                <button onClick={borrarTodaTemporada} className="hidden md:block text-[10px] text-gray-600 hover:text-red-500 hover:bg-red-950/30 border border-transparent hover:border-red-900 rounded px-2 py-1 transition">⛔ Hard Reset</button>
-            </div>
         </div>
       </header>
 
@@ -370,30 +323,11 @@ export default function Home() {
           <div className="grid md:grid-cols-2 gap-8">
              <section className="bg-neutral-900/40 border border-purple-500/20 rounded-3xl p-6 backdrop-blur-sm shadow-[0_0_30px_rgba(168,85,247,0.1)]">
                 <h2 className="text-3xl font-black text-center mb-6 text-white">🏆 Ranking Actual</h2>
-                <div className="space-y-3">
-                    {ranking.map((p, i) => (
-                        <div key={p.nombre} className="flex justify-between items-center bg-black/40 p-4 rounded-xl border border-white/5">
-                            <div className="flex items-center gap-4">
-                                <span className={`font-black text-2xl w-8 text-center ${i===0?'text-yellow-400':i===1?'text-gray-300':i===2?'text-orange-400':'text-gray-600'}`}>{i+1}</span>
-                                <span className="font-bold text-lg">{p.nombre}</span>
-                            </div>
-                            <span className="font-black text-purple-400 text-xl">{p.puntos} pts</span>
-                        </div>
-                    ))}
-                    {ranking.length === 0 && <p className="text-center text-gray-500">Sin puntos...</p>}
-                </div>
+                <div className="space-y-3">{ranking.map((p, i) => (<div key={p.nombre} className="flex justify-between items-center bg-black/40 p-4 rounded-xl border border-white/5"><div className="flex items-center gap-4"><span className={`font-black text-2xl w-8 text-center ${i===0?'text-yellow-400':i===1?'text-gray-300':i===2?'text-orange-400':'text-gray-600'}`}>{i+1}</span><span className="font-bold text-lg">{p.nombre}</span></div><span className="font-black text-purple-400 text-xl">{p.puntos} pts</span></div>))}{ranking.length === 0 && <p className="text-center text-gray-500">Sin puntos...</p>}</div>
              </section>
              <section className="bg-neutral-900/40 border border-yellow-500/20 rounded-3xl p-6 backdrop-blur-sm shadow-[0_0_30px_rgba(234,179,8,0.1)]">
                 <h2 className="text-3xl font-black text-center mb-6 text-yellow-500">📜 Palmarés</h2>
-                <div className="space-y-3 max-h-[500px] overflow-y-auto">
-                    {history.map((h, i) => (
-                        <div key={i} className="flex justify-between items-center bg-yellow-900/10 p-4 rounded-xl border border-yellow-500/20">
-                            <div><p className="font-bold text-white text-lg">🏆 {h.winner}</p><p className="text-[10px] text-yellow-300">{h.winnerTeam}</p></div>
-                            <span className="text-xs text-gray-500">{h.date ? new Date(h.date.seconds * 1000).toLocaleDateString() : 'Hoy'}</span>
-                        </div>
-                    ))}
-                    {history.length === 0 && <p className="text-center text-gray-500">Aún no hay campeones.</p>}
-                </div>
+                <div className="space-y-3 max-h-[500px] overflow-y-auto">{history.map((h, i) => (<div key={i} className="flex justify-between items-center bg-yellow-900/10 p-4 rounded-xl border border-yellow-500/20"><div><p className="font-bold text-white text-lg">🏆 {h.winner}</p><p className="text-[10px] text-yellow-300">{h.winnerTeam}</p></div><span className="text-xs text-gray-500">{h.date ? new Date(h.date.seconds * 1000).toLocaleDateString() : 'Hoy'}</span></div>))}{history.length === 0 && <p className="text-center text-gray-500">Aún no hay campeones.</p>}</div>
              </section>
           </div>
         )}
@@ -401,16 +335,8 @@ export default function Home() {
         {activeTab === 'pachanga' && (
           <section className="max-w-3xl mx-auto bg-neutral-900/40 border border-green-500/20 rounded-3xl p-6 backdrop-blur-sm shadow-[0_0_30px_rgba(34,197,94,0.1)]">
              <h2 className="text-3xl font-black text-green-400 mb-6 drop-shadow-md">⚽ Equipos Random</h2>
-             <div className="flex flex-col gap-4 mb-8">
-                <textarea className="w-full h-32 bg-black/40 border border-gray-700 rounded-xl p-4 text-white resize-none focus:outline-none focus:border-green-500 transition" placeholder="Escribe nombres y pulsa ENTER..." value={pachangaInput} onChange={e=>setPachangaInput(e.target.value)}></textarea>
-                <button onClick={handleSorteoPachanga} className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white font-black py-4 rounded-xl shadow-lg">MEZCLAR</button>
-             </div>
-             {equipoA.length > 0 && (
-                <div className="grid grid-cols-2 gap-6 animate-in fade-in">
-                    <div className="bg-black/50 border border-red-500/30 p-6 rounded-2xl"><h3 className="text-red-400 font-black text-center mb-4">🔴 ROJOS</h3>{equipoA.map((p,i)=><div key={i} className="text-center text-gray-300 py-1">{p}</div>)}</div>
-                    <div className="bg-black/50 border border-blue-500/30 p-6 rounded-2xl"><h3 className="text-blue-400 font-black text-center mb-4">🔵 AZULES</h3>{equipoB.map((p,i)=><div key={i} className="text-center text-gray-300 py-1">{p}</div>)}</div>
-                </div>
-             )}
+             <div className="flex flex-col gap-4 mb-8"><textarea className="w-full h-32 bg-black/40 border border-gray-700 rounded-xl p-4 text-white resize-none focus:outline-none focus:border-green-500 transition" placeholder="Escribe nombres y pulsa ENTER..." value={pachangaInput} onChange={e=>setPachangaInput(e.target.value)}></textarea><button onClick={handleSorteoPachanga} className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white font-black py-4 rounded-xl shadow-lg">MEZCLAR</button></div>
+             {equipoA.length > 0 && (<div className="grid grid-cols-2 gap-6 animate-in fade-in"><div className="bg-black/50 border border-red-500/30 p-6 rounded-2xl"><h3 className="text-red-400 font-black text-center mb-4">🔴 ROJOS</h3>{equipoA.map((p,i)=><div key={i} className="text-center text-gray-300 py-1">{p}</div>)}</div><div className="bg-black/50 border border-blue-500/30 p-6 rounded-2xl"><h3 className="text-blue-400 font-black text-center mb-4">🔵 AZULES</h3>{equipoB.map((p,i)=><div key={i} className="text-center text-gray-300 py-1">{p}</div>)}</div></div>)}
           </section>
         )}
 
@@ -483,8 +409,32 @@ export default function Home() {
            </section>
         )}
 
-        <div className="fixed bottom-0 left-0 w-full bg-black/90 border-t border-purple-500/30 overflow-hidden z-40 py-1"><div className="animate-marquee whitespace-nowrap flex gap-10">{[...NEWS_TICKER, ...NEWS_TICKER].map((news, i) => (<span key={i} className="text-xs md:text-sm font-bold text-purple-300 uppercase tracking-wider">{news}</span>))}</div></div>
-        <div className="fixed bottom-10 right-4 z-50 flex flex-col items-end gap-2"><button onClick={() => setShowDJ(!showDJ)} className="bg-purple-600 hover:bg-purple-500 text-white p-4 rounded-full shadow-2xl border-2 border-white/20 animate-pulse active:scale-95 transition">🔊</button>{showDJ && (<div className="bg-black/90 p-4 rounded-2xl border border-purple-500/30 backdrop-blur-md shadow-2xl flex flex-col gap-2 animate-in slide-in-from-bottom-5 mb-2"><SoundBtn label="📢 BOCINA" url="https://www.myinstants.com/media/sounds/mlg-airhorn.mp3" color="bg-red-600" /><SoundBtn label="🎻 VIOLÍN" url="https://www.myinstants.com/media/sounds/sad-violin-airhorn.mp3" color="bg-blue-600" /><SoundBtn label="🦗 GRILLOS" url="https://www.myinstants.com/media/sounds/cricket_1.mp3" color="bg-green-600" /><SoundBtn label="👏 APLAUSO" url="https://www.myinstants.com/media/sounds/aplausos_1.mp3" color="bg-yellow-600" /><SoundBtn label="😡 BUUU" url="https://www.myinstants.com/media/sounds/boo.mp3" color="bg-gray-600" /><SoundBtn label="🐐 SIUUU" url="https://www.myinstants.com/media/sounds/siu.mp3" color="bg-neutral-800" /></div>)}</div>
+        {/* NEWS TICKER (Elevado para móvil) */}
+        <div className="fixed bottom-0 left-0 w-full bg-black/90 border-t border-purple-500/30 overflow-hidden z-40 py-1">
+            <div className="animate-marquee whitespace-nowrap flex gap-10">
+                {[...NEWS_TICKER, ...NEWS_TICKER].map((news, i) => (
+                    <span key={i} className="text-xs md:text-sm font-bold text-purple-300 uppercase tracking-wider">{news}</span>
+                ))}
+            </div>
+        </div>
+
+        {/* BOTONERA TÓXICA (DJ) - Ajustado para que no tape */}
+        <div className="fixed bottom-12 right-4 z-50 flex flex-col items-end gap-2">
+           <button onClick={() => setShowDJ(!showDJ)} className="bg-purple-600 hover:bg-purple-500 text-white p-4 rounded-full shadow-2xl border-2 border-white/20 animate-pulse active:scale-95 transition">
+             {showDJ ? '✖️' : '🔊'}
+           </button>
+           {showDJ && (
+             <div className="bg-black/90 p-4 rounded-2xl border border-purple-500/30 backdrop-blur-md shadow-2xl flex flex-col gap-2 animate-in slide-in-from-bottom-5 mb-2">
+               <SoundBtn label="📢 BOCINA" url="https://www.myinstants.com/media/sounds/mlg-airhorn.mp3" color="bg-red-600" />
+               <SoundBtn label="🎻 VIOLÍN" url="https://www.myinstants.com/media/sounds/sad-violin-airhorn.mp3" color="bg-blue-600" />
+               <SoundBtn label="🦗 GRILLOS" url="https://www.myinstants.com/media/sounds/cricket_1.mp3" color="bg-green-600" />
+               <SoundBtn label="👏 APLAUSO" url="https://www.myinstants.com/media/sounds/aplausos_1.mp3" color="bg-yellow-600" />
+               <SoundBtn label="😡 BUUU" url="https://www.myinstants.com/media/sounds/boo.mp3" color="bg-gray-600" />
+               <SoundBtn label="🐐 SIUUU" url="https://www.myinstants.com/media/sounds/siu.mp3" color="bg-neutral-800" />
+             </div>
+           )}
+        </div>
+
       </div>
       <style jsx global>{`@keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } } .animate-marquee { animation: marquee 30s linear infinite; }`}</style>
     </main>
@@ -507,9 +457,9 @@ function MatchCard({ m, onFinish, isFinal }: { m?: Match, onFinish: (id: number,
         <div className={`relative p-3 rounded-xl border-t border-l border-white/10 shadow-xl w-full min-w-[180px] transition-all backdrop-blur-md ${m.winner ? 'bg-blue-900/20 border-blue-500/50' : 'bg-neutral-900/80 border-gray-800'}`}>
             {m.winner ? (
                 <div className="flex justify-between items-center gap-1 pt-1">
-                    <div className="w-1/3 text-right overflow-hidden"><span className={`text-xs font-bold block truncate ${m.winner===m.p1?'text-green-400':'text-gray-500 line-through'}`}>{m.p1}</span><span className="text-[9px] text-gray-400 block truncate">{m.p1Team}</span></div>
+                    <div className="w-1/3 text-right overflow-hidden"><span className={`text-xs font-bold block truncate ${m.winner===m.p1?'text-green-400':'text-gray-500 line-through'}`}>{m.p1}</span><span className="text-[9px] text-gray-400 block truncate">{m.p1Team}</span><span className="text-[9px] font-black text-yellow-500/90 block truncate">{m.p1Club}</span></div>
                     <div className="bg-black/60 px-2 py-1 rounded text-xs font-black text-white border border-white/10">{m.score1}-{m.score2}</div>
-                    <div className="w-1/3 text-left overflow-hidden"><span className={`text-xs font-bold block truncate ${m.winner===m.p2?'text-green-400':'text-gray-500 line-through'}`}>{m.p2}</span><span className="text-[9px] text-gray-400 block truncate">{m.p2Team}</span></div>
+                    <div className="w-1/3 text-left overflow-hidden"><span className={`text-xs font-bold block truncate ${m.winner===m.p2?'text-green-400':'text-gray-500 line-through'}`}>{m.p2}</span><span className="text-[9px] text-gray-400 block truncate">{m.p2Team}</span><span className="text-[9px] font-black text-yellow-500/90 block truncate">{m.p2Club}</span></div>
                 </div>
             ) : (
                 <div className="flex flex-col gap-2 mt-1">
