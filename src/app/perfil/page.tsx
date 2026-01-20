@@ -153,7 +153,6 @@ export default function PerfilPage() {
 
           {/* ESTADÍSTICAS */}
           <div className="grid grid-cols-3 gap-3">
-              {/* Nota: Usamos 'ganados' en lugar de 'victorias' para coincidir con la DB */}
               <div className="bg-white p-4 rounded-2xl border border-gray-200 text-center shadow-sm"><Trophy className="mx-auto mb-2 text-yellow-500" size={20}/><p className="font-black text-2xl">{ranking.find((r:any)=>r.name===user.id)?.ganados||0}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Victorias</p></div>
               <div className="bg-white p-4 rounded-2xl border border-gray-200 text-center shadow-sm"><TrendingUp className="mx-auto mb-2 text-blue-600" size={20}/><p className="font-black text-2xl">{ranking.find((r:any)=>r.name===user.id)?.puntos||0}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Puntos</p></div>
               <div className="bg-white p-4 rounded-2xl border border-gray-200 text-center shadow-sm"><History className="mx-auto mb-2 text-purple-600" size={20}/><p className="font-black text-2xl">{history.filter((h:any)=>h.winner===user.id).length}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Torneos</p></div>
