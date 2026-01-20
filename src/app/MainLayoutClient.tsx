@@ -49,7 +49,7 @@ export default function MainLayoutClient({ children }: { children: React.ReactNo
             <nav className="fixed bottom-6 left-4 right-4 bg-white/70 backdrop-blur-2xl border border-white/50 rounded-3xl flex justify-around p-3 shadow-2xl shadow-blue-900/5 z-40 max-w-md mx-auto ring-1 ring-black/5">
                 <NavItem icon={<Trophy size={20}/>} label="Torneo" href="/torneo" active={pathname === '/torneo'} />
                 <NavItem icon={<Banknote size={20}/>} label="Apuestas" href="/apuestas" active={pathname === '/apuestas'} />
-                <NavItem icon={<Dices size={20}/>} label="Mixer" href="/pachanga" active={pathname === '/pachanga'} />
+                <NavItem icon={<Dices size={20}/>} label="Mixer" href="/mixer" active={pathname === '/mixer'} />
                 <NavItem icon={<Users size={20}/>} label="Perfil" href="/perfil" active={pathname === '/perfil'} />
             </nav>
         </>
