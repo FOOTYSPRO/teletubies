@@ -18,25 +18,34 @@ export default function ApuestasPage() {
   const richest = useMemo(() => users.length ? [...users].sort((a,b) => b.balance - a.balance)[0] : null, [users]);
   const poorest = useMemo(() => users.length ? [...users].sort((a,b) => a.balance - b.balance)[0] : null, [users]);
   
-  // --- FILTROS DE APUESTAS ---
-  const pendingBets = activeBets.filter((b:any) => {
-      if (b.status !== 'pending') return false;
-      const match = matches.find((m:any) => m.id === b.matchId);
-      if (match?.started && b.bettor !== user?.id) return false;
-      return true;
-  });
+  // --- 1. FILTRO DE APUESTAS EN JUEGO (PENDIENTES) ---
+  const pendingBets = useMemo(() => {
+      return activeBets.filter((b:any) => {
+          if (b.status !== 'pending') return false;
+          const match = matches.find((m:any) => m.id === b.matchId);
+          // Si el partido ya empezó, ocultar las apuestas de otros (solo veo las mías)
+          if (match?.started && b.bettor !== user?.id) return false;
+          return true;
+      });
+  }, [activeBets, matches, user]);
   
-  const globalHistory = activeBets
-    .filter((b:any) => b.status !== 'pending') 
-    .sort((a:any, b:any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
-    .reverse();
+  // --- 2. FILTRO DE HISTORIAL (TODO LO QUE NO SEA PENDING) ---
+  const globalHistory = useMemo(() => {
+      return activeBets
+        .filter((b:any) => b.status !== 'pending') 
+        .sort((a:any, b:any) => {
+            // Protección contra fechas nulas en datos antiguos
+            const timeA = a.timestamp?.seconds || 0;
+            const timeB = b.timestamp?.seconds || 0;
+            return timeB - timeA;
+        });
+  }, [activeBets]);
 
   // --- DETECCIÓN DE ESTADO DEL PARTIDO ---
   const currentMatch = matches.find((m:any) => m.id === selectedMatchId);
   
   const isUserPlaying = useMemo(() => {
       if (!currentMatch || !user) return false;
-      // Convertimos "Pepe & Juan" en ["Pepe", "Juan"] para comprobar nombres exactos
       const p1Parts = currentMatch.p1 ? currentMatch.p1.split(' & ') : [];
       const p2Parts = currentMatch.p2 ? currentMatch.p2.split(' & ') : [];
       const allPlayers = [...p1Parts, ...p2Parts];
@@ -63,7 +72,7 @@ export default function ApuestasPage() {
   };
 
   const toggleSelection = (type: 'winner'|'goals', value: string) => {
-      // CORRECCIÓN AQUÍ: Usamos (selectedMatchId === null) en vez de (!selectedMatchId) para permitir el ID 0
+      // CORRECCIÓN IMPORTANTE: selectedMatchId puede ser 0, así que usamos (=== null)
       if (selectedMatchId === null || isUserPlaying || isMarketClosed) return;
       
       const { odd } = getOddsInfo(selectedMatchId, value, type);
@@ -110,23 +119,33 @@ export default function ApuestasPage() {
       } catch (e) { alert("Error al apostar"); }
   };
 
-  // --- STATS ---
+  // --- 3. RANKING DE PROFIT (CÁLCULO BLINDADO) ---
   const bettingStats = useMemo(() => {
       const stats: any = {};
+      
       activeBets.forEach((b: any) => {
+          // Ignorar pendientes
           if (b.status === 'pending') return;
+
+          // Inicializar jugador si no existe
           if (!stats[b.bettor]) stats[b.bettor] = { name: b.bettor, profit: 0, wins: 0, total: 0 };
+          
           stats[b.bettor].total++;
-          const amount = Number(b.amount) || 0;
+          const amount = Number(b.amount) || 0; // Asegurar número
+
           if (b.status === 'won') {
               stats[b.bettor].wins++;
-              const finalOdd = b.finalOdd ? parseFloat(b.finalOdd) : 2.0;
-              const grossWin = amount * finalOdd;
+              // Si no hay cuota final (datos viejos), asumimos 2.0 por defecto
+              const odd = b.finalOdd ? parseFloat(b.finalOdd) : 2.0;
+              const grossWin = amount * odd;
               stats[b.bettor].profit += (grossWin - amount);
           } else {
+              // Si es 'lost', 'void' o cualquier estado antiguo, se resta la cantidad apostada
               stats[b.bettor].profit -= amount;
           }
       });
+
+      // Convertir a array y ordenar por beneficio
       return Object.values(stats).sort((a:any, b:any) => b.profit - a.profit);
   }, [activeBets]);
 
@@ -134,6 +153,7 @@ export default function ApuestasPage() {
 
   return (
       <div className="space-y-6 max-w-xl mx-auto animate-in fade-in pb-24 px-4">
+          
           <div className="grid grid-cols-2 gap-4">
               <div className="bg-gradient-to-br from-yellow-50 to-white p-4 rounded-3xl border border-yellow-200 shadow-sm text-center"><Crown size={24} className="mx-auto text-yellow-500 mb-1"/><span className="text-[10px] font-black text-yellow-600 uppercase">Patrimonio</span><p className="text-sm font-black truncate">{richest?.id || "-"}</p></div>
               <div className="bg-gradient-to-br from-red-50 to-white p-4 rounded-3xl border border-red-200 shadow-sm text-center"><TrendingDown size={24} className="mx-auto text-red-500 mb-1"/><span className="text-[10px] font-black text-red-600 uppercase">Ruina</span><p className="text-sm font-black truncate">{poorest?.id || "-"}</p></div>
@@ -148,9 +168,11 @@ export default function ApuestasPage() {
                         className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200 text-black text-xs font-bold outline-none uppercase tracking-wide" 
                         onChange={e => {
                             const val = e.target.value;
+                            // Conversión segura de ID
                             setSelectedMatchId(val === "" ? null : parseInt(val));
                             setSelections([]);
                         }}
+                        value={selectedMatchId === null ? "" : selectedMatchId}
                       >
                           <option value="">👇 Seleccionar Partido</option>
                           {matches.filter((m:any) => !m.winner && !m.isBye && !m.started && m.p1 !== "Esperando...").map((m:any) => (
@@ -226,14 +248,25 @@ export default function ApuestasPage() {
                       <div key={b.id} className={`p-4 rounded-2xl border flex justify-between items-center bg-white border-gray-100 shadow-sm ${b.status==='won'?'bg-green-50 !border-green-200':'bg-red-50 !border-red-200'}`}>
                           <div>
                               <div className="flex items-center gap-2 mb-1"><span className="font-black text-xs uppercase text-black">{b.bettor}</span></div>
-                              <p className="text-[10px] text-gray-500 font-bold">{b.type==='combined'?'Combinada':b.chosenWinner}</p>
+                              {b.type === 'combined' ? (
+                                  <p className="text-[10px] text-gray-500 font-bold">Combinada</p>
+                              ) : (
+                                  <p className="text-[10px] text-gray-500 font-bold">{b.chosenWinner}</p>
+                              )}
                           </div>
                           <div className="text-right">
-                              <span className={`font-mono font-black text-sm block ${b.status==='won'?'text-green-600':'text-red-500'}`}>{b.status==='won'?'+':'-'}{b.status==='won' ? Math.floor(Number(b.amount) * parseFloat(b.finalOdd||'2.0')) - Number(b.amount) : Number(b.amount)}€</span>
+                              <span className={`font-mono font-black text-sm block ${b.status==='won'?'text-green-600':'text-red-500'}`}>
+                                  {b.status==='won'?'+':'-'}
+                                  {/* Cálculo compatible con datos antiguos */}
+                                  {b.status==='won' 
+                                    ? Math.floor(Number(b.amount) * (b.finalOdd ? parseFloat(b.finalOdd) : 2.0)) - Number(b.amount) 
+                                    : Number(b.amount)
+                                  }€
+                              </span>
                               <span className="text-[9px] text-gray-400 font-bold uppercase">{b.status==='won'?'WIN':'LOSS'}</span>
                           </div>
                       </div>
-                  )) : <div className="text-center py-8 text-gray-300"><AlertCircle className="mx-auto mb-2"/>Sin historial reciente.</div>
+                  )) : <div className="text-center py-8 text-gray-300"><AlertCircle className="mx-auto mb-2"/>Sin historial.</div>
               )}
 
               {activeTab === 'ranking' && (
