@@ -18,7 +18,7 @@ type Match = {
   isBye?: boolean;
 };
 
-type UserProfile = { id: string; clubName: string; balance: number; password?: string; }; // Añadido password
+type UserProfile = { id: string; clubName: string; balance: number; password?: string; };
 type Bet = { id: string; matchId: number; bettor: string; chosenWinner: string; amount: number; status: 'pending' | 'won' | 'lost'; };
 type HistoryItem = { winner: string; winnerTeam?: string; date: any; type: string };
 type Tab = 'perfil' | 'fifa' | 'apuestas' | 'pachanga' | 'castigos';
@@ -31,7 +31,7 @@ export default function Home() {
   
   // DATOS
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null); // Usuario logueado
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [fifaMatches, setFifaMatches] = useState<Match[]>([]);
   const [activeBets, setActiveBets] = useState<Bet[]>([]);
@@ -60,7 +60,7 @@ export default function Home() {
   const [excusa, setExcusa] = useState<string | null>(null);
   const [isSpinning, setIsSpinning] = useState(false);
   const [showDJ, setShowDJ] = useState(false);
-  const [showSettings, setShowSettings] = useState(false); // Menú ajustes
+  const [showSettings, setShowSettings] = useState(false);
   const [pachangaInput, setPachangaInput] = useState("");
   const [equipoA, setEquipoA] = useState<string[]>([]);
   const [equipoB, setEquipoB] = useState<string[]>([]);
@@ -92,7 +92,6 @@ export default function Home() {
     const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("balance", "desc")), (snap) => {
         const usersList = snap.docs.map(d => ({ id: d.id, ...d.data() })) as UserProfile[];
         setUsers(usersList);
-        // Actualizar currentUser si cambian sus datos (dinero)
         if (currentUser) {
             const updated = usersList.find(u => u.id === currentUser.id);
             if (updated) setCurrentUser(updated);
@@ -102,9 +101,9 @@ export default function Home() {
     const unsubRank = onSnapshot(query(collection(db, "ranking"), orderBy("puntos", "desc")), (snap) => setRanking(snap.docs.map(d => ({ nombre: d.id, ...d.data() } as any))));
     const unsubHist = onSnapshot(query(collection(db, "history"), orderBy("date", "desc")), (snap) => setHistory(snap.docs.map(d => d.data()) as HistoryItem[]));
     return () => { unsubSala(); unsubUsers(); unsubBets(); unsubRank(); unsubHist(); };
-  }, [currentUser?.id]); // Dependencia para actualizar saldo en tiempo real
+  }, [currentUser?.id]);
 
-  // --- AUTH SYSTEM ---
+  // --- AUTH ---
   const handleLogin = () => {
       const user = users.find(u => u.id.toLowerCase() === loginName.toLowerCase());
       if (!user) return alert("Usuario no encontrado.");
@@ -117,7 +116,6 @@ export default function Home() {
       if (!regName || !regClub || !regPass) return alert("Rellena todo.");
       const exists = users.find(u => u.id.toLowerCase() === regName.toLowerCase());
       if (exists) return alert("Ese nombre ya existe.");
-      
       const newUser = { clubName: regClub, balance: STARTING_BALANCE, password: regPass };
       await setDoc(doc(db, "users", regName), newUser);
       setCurrentUser({ id: regName, ...newUser });
@@ -127,7 +125,7 @@ export default function Home() {
 
   const logout = () => setCurrentUser(null);
 
-  // --- LOGICA TORNEO ---
+  // --- TORNEO ---
   const togglePlayerSelection = (name: string) => {
       if (selectedPlayers.includes(name)) setSelectedPlayers(selectedPlayers.filter(p => p !== name));
       else { if (selectedPlayers.length >= 16) return alert("Máximo 16."); setSelectedPlayers([...selectedPlayers, name]); }
@@ -137,7 +135,7 @@ export default function Home() {
       if (selectedPlayers.length < 2) return alert("Mínimo 2 jugadores.");
       let players = [...selectedPlayers];
       let targetSize = players.length <= 4 ? 4 : 8;
-      if (players.length > 8) return alert("Por ahora máx 8 jugadores en el cuadro."); // Simplificación
+      if (players.length > 8) return alert("Máx 8 jugadores.");
       while (players.length < targetSize) players.push(BYE_NAME);
 
       const shuffledP = [...players].sort(() => Math.random() - 0.5);
@@ -214,7 +212,6 @@ export default function Home() {
     const lTeam = isP1 ? m.p2Team : m.p1Team; const lClub = isP1 ? m.p2Club : m.p1Club;
 
     try {
-      // Resolver apuestas
       const pending = activeBets.filter(b => b.matchId === matchId && b.status === 'pending');
       const batch = writeBatch(db);
       pending.forEach(b => {
@@ -253,7 +250,21 @@ export default function Home() {
   };
 
   // HELPERS
-  const calcularPaliza = (matches: Match[]) => { let maxDiff=0; let p=null; matches.forEach(m=>{if(m.winner && m.score1!==undefined){const d=Math.abs(m.score1-m.score2);if(d>=3 && d>maxDiff){maxDiff=d;const w=m.score1>m.score2;p={winner:w?m.p1:m.p2,loser:w?m.p2:m.p1,diff:d,result:`${m.score1}-${m.score2}`}}}}); setMayorPaliza(p); };
+  const calcularPaliza = (matches: Match[]) => { 
+      let maxDiff=0; let p=null; 
+      matches.forEach(m=>{
+          // CORRECCIÓN AQUÍ: Comprobar score1 Y score2
+          if(m.winner && m.score1!==undefined && m.score2!==undefined){
+              const d=Math.abs(m.score1-m.score2);
+              if(d>=3 && d>maxDiff){
+                  maxDiff=d;
+                  const w=m.score1>m.score2;
+                  p={winner:w?m.p1:m.p2,loser:w?m.p2:m.p1,diff:d,result:`${m.score1}-${m.score2}`};
+              }
+          }
+      }); 
+      setMayorPaliza(p); 
+  };
   const girarRuleta = async (tipo: 'soft'|'chupito') => { setIsSpinning(true); const l=tipo==='soft'?LISTA_SOFT:LISTA_CHUPITOS; let i=0; const int=setInterval(()=>{setResultadoRuleta(l[i%l.length]);i++},80); setTimeout(async()=>{clearInterval(int);const f=l[Math.floor(Math.random()*l.length)];setResultadoRuleta(f);setIsSpinning(false);await setDoc(doc(db,"sala","principal"),{ultimoCastigo:f},{merge:true});if(tipo==='chupito')confetti({particleCount:50,colors:['#ff0000']})},2000); };
   const handleSorteoPachanga = () => { const n=pachangaInput.split(/[\n,]+/).map(x=>x.trim()).filter(x=>x); if(n.length<2)return alert("Mínimo 2"); const s=[...n].sort(()=>Math.random()-0.5); const m=Math.ceil(s.length/2); setDoc(doc(db,"sala","principal"),{equipoA:s.slice(0,m),equipoB:s.slice(m)},{merge:true}); };
   const lanzarFiesta = () => { confetti({particleCount:150}); const a=new Audio("/gol.mp3"); a.volume=0.5; a.play().catch(()=>{}); };
@@ -267,7 +278,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-neutral-950 text-white font-sans pb-32 overflow-x-hidden select-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-neutral-950 to-black">
       
-      {/* --- NEW APP HEADER --- */}
+      {/* HEADER APP */}
       <header className="fixed top-0 w-full bg-black/80 backdrop-blur-md z-50 border-b border-white/10 px-4 py-3 flex justify-between items-center h-16">
         <h1 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600 italic tracking-tighter">
             TELETUBIES LIGA
@@ -278,7 +289,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* --- SETTINGS MODAL --- */}
+      {/* SETTINGS MODAL */}
       {showSettings && (
           <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4" onClick={()=>setShowSettings(false)}>
               <div className="bg-neutral-900 border border-gray-700 p-6 rounded-2xl w-full max-w-sm space-y-4" onClick={e=>e.stopPropagation()}>
@@ -293,7 +304,7 @@ export default function Home() {
 
       <div className="pt-20 max-w-4xl mx-auto p-4 md:p-6 min-h-screen">
         
-        {/* --- PESTAÑA PERFIL (LOGIN / DASHBOARD) --- */}
+        {/* PERFIL (LOGIN / DASHBOARD) */}
         {activeTab === 'perfil' && (
             <div className="space-y-6">
                 {!currentUser ? (
@@ -318,41 +329,22 @@ export default function Home() {
                         )}
                     </div>
                 ) : (
-                    // DASHBOARD PRIVADO
                     <div className="space-y-6">
                         <div className="bg-gradient-to-br from-blue-900/40 to-purple-900/40 p-6 rounded-3xl border border-white/10 flex items-center justify-between">
-                            <div>
-                                <h2 className="text-3xl font-black text-white">{currentUser.id}</h2>
-                                <p className="text-blue-300 font-bold">{currentUser.clubName}</p>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-xs text-gray-400 uppercase tracking-widest">Saldo Actual</p>
-                                <p className="text-4xl font-mono font-black text-yellow-400">{currentUser.balance}</p>
-                            </div>
+                            <div><h2 className="text-3xl font-black text-white">{currentUser.id}</h2><p className="text-blue-300 font-bold">{currentUser.clubName}</p></div>
+                            <div className="text-right"><p className="text-xs text-gray-400 uppercase tracking-widest">Saldo Actual</p><p className="text-4xl font-mono font-black text-yellow-400">{currentUser.balance}</p></div>
                         </div>
-
-                        {/* ESTADÍSTICAS */}
                         <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-neutral-900/50 p-4 rounded-2xl border border-white/5 text-center">
-                                <p className="text-2xl font-black text-green-400">{ranking.find(r=>r.nombre===currentUser.id)?.victorias || 0}</p>
-                                <p className="text-xs text-gray-500 uppercase">Victorias</p>
-                            </div>
-                            <div className="bg-neutral-900/50 p-4 rounded-2xl border border-white/5 text-center">
-                                <p className="text-2xl font-black text-purple-400">{ranking.find(r=>r.nombre===currentUser.id)?.puntos || 0}</p>
-                                <p className="text-xs text-gray-500 uppercase">Puntos</p>
-                            </div>
+                            <div className="bg-neutral-900/50 p-4 rounded-2xl border border-white/5 text-center"><p className="text-2xl font-black text-green-400">{ranking.find(r=>r.nombre===currentUser.id)?.victorias || 0}</p><p className="text-xs text-gray-500 uppercase">Victorias</p></div>
+                            <div className="bg-neutral-900/50 p-4 rounded-2xl border border-white/5 text-center"><p className="text-2xl font-black text-purple-400">{ranking.find(r=>r.nombre===currentUser.id)?.puntos || 0}</p><p className="text-xs text-gray-500 uppercase">Puntos</p></div>
                         </div>
-
-                        {/* HISTORIAL APUESTAS */}
                         <div className="bg-neutral-900/30 p-6 rounded-3xl border border-white/5">
                             <h3 className="font-bold text-gray-400 mb-4">Tus Últimas Apuestas</h3>
                             <div className="space-y-2">
                                 {activeBets.filter(b => b.bettor === currentUser.id).map(b => (
                                     <div key={b.id} className="flex justify-between items-center text-sm p-2 bg-black/20 rounded-lg">
                                         <span>Apuesta a <span className="text-blue-300">{b.chosenWinner}</span></span>
-                                        <span className={`font-bold ${b.status==='won'?'text-green-400':b.status==='lost'?'text-red-500':'text-yellow-500'}`}>
-                                            {b.status==='won' ? `+${b.amount*2}` : b.status==='lost' ? `-${b.amount}` : 'Pendiente'}
-                                        </span>
+                                        <span className={`font-bold ${b.status==='won'?'text-green-400':b.status==='lost'?'text-red-500':'text-yellow-500'}`}>{b.status==='won' ? `+${b.amount*2}` : b.status==='lost' ? `-${b.amount}` : 'Pendiente'}</span>
                                     </div>
                                 ))}
                                 {activeBets.filter(b => b.bettor === currentUser.id).length === 0 && <p className="text-gray-500 text-xs">No has apostado aún.</p>}
@@ -363,7 +355,7 @@ export default function Home() {
             </div>
         )}
 
-        {/* --- PESTAÑA FIFA --- */}
+        {/* FIFA */}
         {activeTab === 'fifa' && (
             <section>
                 {fifaMatches.length === 0 && (
@@ -388,20 +380,15 @@ export default function Home() {
 
                 {fifaMatches.length > 0 && (
                     <div className="w-full pb-20">
-                        {/* Mobile List View */}
                         <div className="md:hidden flex flex-col gap-6">
                             <h3 className="text-center font-bold text-gray-500 text-xs tracking-widest uppercase">Ronda 1</h3>
                             {(fifaMatches.length===4 ? [0,1] : [0,1,2,3]).map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}
-                            
                             {fifaMatches.length===8 && (<><h3 className="text-center font-bold text-gray-500 text-xs tracking-widest uppercase mt-4">Semis</h3>{[4,5].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}</>)}
-                            
                             <h3 className="text-center font-bold text-yellow-500 text-xs tracking-widest uppercase mt-4">FINAL</h3>
                             <MatchCard m={fifaMatches[fifaMatches.length===4 ? 2 : 6]} onFinish={finalizarPartido} isFinal />
-                            
                             <h3 className="text-center font-bold text-orange-400 text-xs tracking-widest uppercase mt-4">3º Puesto</h3>
                             <MatchCard m={fifaMatches[fifaMatches.length===4 ? 3 : 7]} onFinish={finalizarPartido} />
                         </div>
-                        {/* Desktop View */}
                         <div className="hidden md:block grid grid-cols-3 gap-8">
                             <div className="flex flex-col gap-4">{(fifaMatches.length===4 ? [0,1] : [0,1,2,3]).map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}</div>
                             <div className="flex flex-col justify-center gap-4">{fifaMatches.length===8 && [4,5].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}</div>
@@ -412,7 +399,7 @@ export default function Home() {
             </section>
         )}
 
-        {/* --- PESTAÑA APUESTAS --- */}
+        {/* APUESTAS */}
         {activeTab === 'apuestas' && (
             <div className="max-w-xl mx-auto space-y-6">
                 {!currentUser ? <div className="text-center p-10 text-gray-500">Inicia sesión en tu perfil para apostar.</div> : (
@@ -441,26 +428,26 @@ export default function Home() {
                         </div>
                         <div>
                             <h3 className="font-bold text-gray-400 uppercase text-xs mb-2">Apuestas Globales</h3>
-                            <div className="space-y-2">{activeBets.filter(b => b.status === 'pending').map(b => (<div key={b.id} className="bg-neutral-900/50 p-3 rounded-xl border border-white/5 flex justify-between items-center"><div><span className="font-bold text-yellow-400">{b.bettor}</span> vs <span className="font-bold text-blue-400">{b.chosenWinner}</span></div><span className="font-mono">{b.amount} 💰</span></div>))}</div>
+                            <div className="space-y-2">{activeBets.filter(b => b.status === 'pending').map(b => (<div key={b.id} className="bg-neutral-900/50 p-3 rounded-xl border border-white/5 flex justify-between items-center"><div><span className="font-bold text-yellow-400">{b.bettor}</span> vs <span className="font-bold text-blue-400">{b.chosenWinner}</span></div><span className="font-mono">{b.amount} 💰</span></div>))}{activeBets.filter(b => b.status === 'pending').length === 0 && <p className="text-gray-600 text-sm">Sin apuestas activas.</p>}</div>
                         </div>
                     </>
                 )}
             </div>
         )}
 
-        {/* --- PESTAÑA PACHANGA --- */}
+        {/* PACHANGA */}
         {activeTab === 'pachanga' && (<section className="max-w-xl mx-auto"><h2 className="text-xl font-bold text-green-400 mb-4">Generador Equipos</h2><textarea className="w-full h-24 bg-black/40 border border-gray-700 rounded-xl p-4 text-white mb-4" placeholder="Lista de nombres..." value={pachangaInput} onChange={e=>setPachangaInput(e.target.value)}></textarea><button onClick={handleSorteoPachanga} className="w-full bg-green-600 text-white font-black py-3 rounded-xl mb-6">MEZCLAR</button>{equipoA.length > 0 && (<div className="grid grid-cols-2 gap-4"><div className="bg-red-900/20 p-4 rounded-xl border border-red-500/30"><h3 className="text-red-400 font-bold mb-2 text-center">ROJOS</h3>{equipoA.map(p=><div key={p} className="text-center text-sm">{p}</div>)}</div><div className="bg-blue-900/20 p-4 rounded-xl border border-blue-500/30"><h3 className="text-blue-400 font-bold mb-2 text-center">AZULES</h3>{equipoB.map(p=><div key={p} className="text-center text-sm">{p}</div>)}</div></div>)}</section>)}
 
-        {/* --- PESTAÑA CASTIGOS --- */}
+        {/* CASTIGOS */}
         {activeTab === 'castigos' && (<section className="max-w-md mx-auto text-center"><div className="bg-black/60 border-2 border-red-600 p-8 rounded-3xl mb-8"><h2 className="text-red-500 font-black uppercase tracking-widest mb-4">Sentencia</h2><p className={`text-2xl font-black ${isSpinning?'blur-md text-red-500/50':'text-white'}`}>{resultadoRuleta}</p></div><div className="mb-8"><div className="flex justify-center gap-2 mb-2"><button onClick={()=>startTimer(30)} className="bg-gray-800 px-3 py-1 rounded text-xs">30s</button><button onClick={()=>startTimer(60)} className="bg-gray-800 px-3 py-1 rounded text-xs">1min</button><button onClick={()=>setTimeLeft(0)} className="bg-red-900/50 px-3 py-1 rounded text-xs">Parar</button></div><div className="text-4xl font-mono">{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}</div></div><button onClick={generarExcusa} className="w-full bg-blue-900/30 text-blue-300 font-bold py-3 rounded-xl mb-6">😭 Excusa</button>{excusa && <div className="text-white italic mb-6">"{excusa}"</div>}<div className="grid grid-cols-2 gap-4"><button disabled={isSpinning} onClick={()=>girarRuleta('soft')} className="bg-neutral-800 p-4 rounded-xl">🤡 Soft</button><button disabled={isSpinning} onClick={()=>girarRuleta('chupito')} className="bg-red-950 p-4 rounded-xl text-red-200">🥃 Chupito</button></div></section>)}
 
       </div>
 
-      {/* --- EXTRAS FLOTANTES --- */}
+      {/* EXTRAS */}
       {mayorPaliza && (<div className="fixed top-20 left-1/2 -translate-x-1/2 w-11/12 max-w-sm bg-gradient-to-r from-pink-950 to-red-950 border border-pink-500 p-4 rounded-xl flex items-center justify-between shadow-2xl z-40"><div className="text-xs"><p className="text-pink-400 font-bold">PALIZA</p><p>{mayorPaliza.winner} humilló a {mayorPaliza.loser}</p></div><span className="text-xl font-black">{mayorPaliza.result}</span></div>)}
       <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2"><button onClick={() => setShowDJ(!showDJ)} className="bg-purple-600 text-white p-3 rounded-full shadow-2xl border-2 border-white/20">{showDJ ? '✖️' : '🔊'}</button>{showDJ && (<div className="bg-black/90 p-4 rounded-2xl border border-purple-500/30 backdrop-blur-md mb-2 flex flex-col gap-2"><SoundBtn label="📢 BOCINA" url="https://www.myinstants.com/media/sounds/mlg-airhorn.mp3" color="bg-red-600" /><SoundBtn label="🎻 VIOLÍN" url="https://www.myinstants.com/media/sounds/sad-violin-airhorn.mp3" color="bg-blue-600" /><SoundBtn label="🦗 GRILLOS" url="https://www.myinstants.com/media/sounds/cricket_1.mp3" color="bg-green-600" /><SoundBtn label="👏 APLAUSO" url="https://www.myinstants.com/media/sounds/aplausos_1.mp3" color="bg-yellow-600" /><SoundBtn label="😡 BUUU" url="https://www.myinstants.com/media/sounds/boo.mp3" color="bg-gray-600" /><SoundBtn label="🐐 SIUUU" url="https://www.myinstants.com/media/sounds/siu.mp3" color="bg-neutral-800" /></div>)}</div>
 
-      {/* --- BOTTOM NAVIGATION (DOCK) --- */}
+      {/* DOCK */}
       <nav className="fixed bottom-4 left-4 right-4 bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl flex justify-around p-1 shadow-2xl z-50">
           <NavBtn icon="👤" label="Perfil" active={activeTab==='perfil'} onClick={()=>setActiveTab('perfil')} />
           <NavBtn icon="🏆" label="FIFA" active={activeTab==='fifa'} onClick={()=>setActiveTab('fifa')} />
@@ -499,9 +486,9 @@ function MatchCard({ m, onFinish, isFinal }: { m?: Match, onFinish: (id: number,
             {m.round === '3rd' && <div className="absolute -top-2 right-2 bg-orange-700 text-[8px] px-2 rounded font-bold border border-orange-500">3er PUESTO</div>}
             {m.winner ? (
                 <div className="flex justify-between items-center gap-1">
-                    <div className="w-1/3 text-right overflow-hidden"><span className={`text-xs font-bold block truncate ${m.winner===m.p1?'text-green-400':'text-gray-500 line-through'}`}>{m.p1}</span><span className="text-[8px] text-gray-400 block truncate">{m.p1Team}</span></div>
+                    <div className="w-1/3 text-right overflow-hidden"><span className={`text-xs font-bold block truncate ${m.winner===m.p1?'text-green-400':'text-gray-500 line-through'}`}>{m.p1}</span><span className="text-[9px] text-gray-400 block truncate">{m.p1Team}</span></div>
                     <div className="bg-black/60 px-2 py-1 rounded text-xs font-bold">{m.score1}-{m.score2}</div>
-                    <div className="w-1/3 text-left overflow-hidden"><span className={`text-xs font-bold block truncate ${m.winner===m.p2?'text-green-400':'text-gray-500 line-through'}`}>{m.p2}</span><span className="text-[8px] text-gray-400 block truncate">{m.p2Team}</span></div>
+                    <div className="w-1/3 text-left overflow-hidden"><span className={`text-xs font-bold block truncate ${m.winner===m.p2?'text-green-400':'text-gray-500 line-through'}`}>{m.p2}</span><span className="text-[9px] text-gray-400 block truncate">{m.p2Team}</span></div>
                 </div>
             ) : (
                 <div className="flex flex-col gap-2">
