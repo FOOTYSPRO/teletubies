@@ -1,31 +1,84 @@
-// src/app/layout.tsx
 import './globals.css';
-import { AppProvider } from '@/lib/context'; // Importamos el cerebro
-import Link from 'next/link';
-import { Trophy, Users, Banknote, Dices } from 'lucide-react';
+import { AppProvider } from '@/lib/context'; // Importamos el contexto
+import Header from './components/Header'; // Lo creamos abajo inline para simplificar si quieres, o en archivo aparte
+import BottomNav from './components/BottomNav';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body className="bg-white text-black font-sans pb-24">
+      <body className="bg-[#f3f4f6] text-black font-sans pb-32">
         <AppProvider>
-          {/* HEADER FIJO */}
-          <header className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-gray-100 px-4 h-16 flex items-center justify-between">
-             <h1 className="font-black italic text-lg tracking-tighter">TELETUBIES <span className="text-blue-600">LEAGUE</span></h1>
-          </header>
-
-          {/* CONTENIDO DE LA PÁGINA (Perfil, Fifa, etc.) */}
-          {children}
-
-          {/* DOCK DE NAVEGACIÓN INFERIOR */}
-          <nav className="fixed bottom-4 left-4 right-4 bg-black text-white rounded-2xl flex justify-around p-3 shadow-2xl z-50">
-             <Link href="/" className="flex flex-col items-center opacity-70 hover:opacity-100"><Trophy size={20}/><span className="text-[9px] font-bold uppercase mt-1">Torneo</span></Link>
-             <Link href="/apuestas" className="flex flex-col items-center opacity-70 hover:opacity-100"><Banknote size={20}/><span className="text-[9px] font-bold uppercase mt-1">Bet</span></Link>
-             <Link href="/perfil" className="flex flex-col items-center opacity-70 hover:opacity-100"><Users size={20}/><span className="text-[9px] font-bold uppercase mt-1">Perfil</span></Link>
-             <Link href="/pachanga" className="flex flex-col items-center opacity-70 hover:opacity-100"><Dices size={20}/><span className="text-[9px] font-bold uppercase mt-1">Mixer</span></Link>
-          </nav>
+           {/* HEADER Y NAV DENTRO DEL PROVIDER PARA ACCEDER AL USER */}
+           <MainLayout>
+              {children}
+           </MainLayout>
         </AppProvider>
       </body>
     </html>
   );
+}
+
+// Componente wrapper para usar hooks dentro del layout
+'use client';
+import { useApp } from '@/lib/context';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Trophy, Banknote, Users, Dices, Settings, UserCircle } from 'lucide-react';
+
+function MainLayout({ children }: { children: React.ReactNode }) {
+    const { user } = useApp();
+    const pathname = usePathname();
+
+    return (
+        <>
+            {/* HEADER PRO */}
+            <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 px-4 h-16 flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-2">
+                    <span className="text-xl">🏆</span>
+                    <h1 className="text-lg font-black italic tracking-tighter text-black">
+                        FOOTYS <span className="text-blue-600">LIGA</span>
+                    </h1>
+                </div>
+                
+                {/* PERFIL A LA DERECHA */}
+                <Link href="/perfil">
+                    {user ? (
+                        <div className="flex items-center gap-2 bg-gray-100 pl-3 pr-2 py-1.5 rounded-full border border-gray-200 hover:bg-gray-200 transition">
+                            <div className="text-right leading-none">
+                                <p className="font-bold text-xs uppercase text-black">{user.id}</p>
+                                <p className="font-mono text-[10px] text-green-600 font-black">{user.balance} €</p>
+                            </div>
+                            <div className="bg-black text-white p-1.5 rounded-full"><UserCircle size={16} /></div>
+                        </div>
+                    ) : (
+                        <button className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-gray-800 transition">
+                            LOGIN
+                        </button>
+                    )}
+                </Link>
+            </header>
+
+            {/* CONTENIDO DE LAS PÁGINAS */}
+            <main className="pt-4 max-w-4xl mx-auto p-4">
+                {children}
+            </main>
+
+            {/* BOTTOM NAV */}
+            <nav className="fixed bottom-4 left-4 right-4 bg-white/90 backdrop-blur-xl border border-gray-200 rounded-2xl flex justify-around p-2 shadow-2xl z-50">
+                <NavItem icon={<Trophy size={18}/>} label="Torneo" href="/" active={pathname === '/'} />
+                <NavItem icon={<Banknote size={18}/>} label="Apuestas" href="/apuestas" active={pathname === '/apuestas'} />
+                <NavItem icon={<Dices size={18}/>} label="Mixer" href="/pachanga" active={pathname === '/pachanga'} />
+                <NavItem icon={<Users size={18}/>} label="Perfil" href="/perfil" active={pathname === '/perfil'} />
+            </nav>
+        </>
+    );
+}
+
+function NavItem({ icon, label, href, active }: any) {
+    return (
+        <Link href={href} className={`flex flex-col items-center justify-center w-full py-1 rounded-xl transition ${active ? 'text-blue-600' : 'text-gray-400 hover:text-black'}`}>
+            <span className="mb-0.5">{icon}</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest">{label}</span>
+        </Link>
+    )
 }

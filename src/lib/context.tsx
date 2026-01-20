@@ -1,12 +1,12 @@
-// src/lib/context.tsx
 'use client';
-import { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { doc, onSnapshot, query, collection, orderBy } from 'firebase/firestore';
 
-// Tipos básicos
-type User = { id: string; clubName: string; balance: number; password?: string; };
-type Match = { id: number; p1: string; score1?: number; score2?: number; winner?: string; round: string; isBye?: boolean; [key:string]: any };
+// Tipos
+export type User = { id: string; clubName: string; balance: number; password?: string; };
+export type Match = { id: number; p1: string; p1Team?: string; p1Club?: string; p2: string; p2Team?: string; p2Club?: string; score1?: number; score2?: number; winner?: string; round: string; isBye?: boolean; };
+export type Bet = { id: string; matchId: number; bettor: string; chosenWinner: string; amount: number; status: 'pending'|'won'|'lost' };
 
 interface AppContextType {
   user: User | null;
@@ -14,7 +14,9 @@ interface AppContextType {
   logout: () => void;
   users: User[];
   matches: Match[];
-  activeBets: any[];
+  activeBets: Bet[];
+  ranking: any[];
+  history: any[];
 }
 
 const AppContext = createContext<AppContextType | any>(null);
@@ -23,9 +25,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
-  const [activeBets, setActiveBets] = useState<any[]>([]);
+  const [activeBets, setActiveBets] = useState<Bet[]>([]);
+  const [ranking, setRanking] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
 
-  // Escuchar Firebase globalmente
+  // 1. Escuchar Datos de Firebase
   useEffect(() => {
     const unsubSala = onSnapshot(doc(db, "sala", "principal"), (d) => {
         if(d.exists()) setMatches(d.data().fifaMatches || []);
@@ -33,36 +37,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("balance", "desc")), (s) => {
         const list = s.docs.map(d => ({ id: d.id, ...d.data() })) as User[];
         setUsers(list);
-        // Si el usuario está logueado, actualizar su saldo en tiempo real
+        // Actualizar saldo en tiempo real si estás logueado
         if (user) {
             const updated = list.find(u => u.id === user.id);
             if (updated) setUser(updated);
         }
     });
-    const unsubBets = onSnapshot(query(collection(db, "bets")), (s) => setActiveBets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubBets = onSnapshot(query(collection(db, "bets")), (s) => setActiveBets(s.docs.map(d => ({ id: d.id, ...d.data() })) as Bet[]));
+    const unsubRank = onSnapshot(query(collection(db, "ranking"), orderBy("puntos", "desc")), (s) => setRanking(s.docs.map(d => ({ nombre: d.id, ...d.data() }))));
+    const unsubHist = onSnapshot(query(collection(db, "history"), orderBy("date", "desc")), (s) => setHistory(s.docs.map(d => d.data())));
     
-    return () => { unsubSala(); unsubUsers(); unsubBets(); };
-  }, [user?.id]); // Dependencia user.id para refrescar saldo
+    return () => { unsubSala(); unsubUsers(); unsubBets(); unsubRank(); unsubHist(); };
+  }, [user?.id]); // Se refresca si cambia el ID del usuario
+
+  // 2. Gestión de Sesión (Persistencia básica)
+  useEffect(() => {
+      const stored = localStorage.getItem('footys_user');
+      if (stored) setUser(JSON.parse(stored));
+  }, []);
 
   const login = (u: User) => {
       setUser(u);
-      // Guardar en localStorage para persistir si recarga la página
-      localStorage.setItem('teletubies_user', JSON.stringify(u));
+      localStorage.setItem('footys_user', JSON.stringify(u));
   };
 
   const logout = () => {
       setUser(null);
-      localStorage.removeItem('teletubies_user');
+      localStorage.removeItem('footys_user');
   };
 
-  // Recuperar sesión al recargar
-  useEffect(() => {
-      const stored = localStorage.getItem('teletubies_user');
-      if (stored) setUser(JSON.parse(stored));
-  }, []);
-
   return (
-    <AppContext.Provider value={{ user, login, logout, users, matches, activeBets }}>
+    <AppContext.Provider value={{ user, login, logout, users, matches, activeBets, ranking, history }}>
       {children}
     </AppContext.Provider>
   );
