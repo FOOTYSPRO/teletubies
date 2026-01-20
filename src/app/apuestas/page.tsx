@@ -155,17 +155,13 @@ export default function ApuestasPage() {
                                   </div>
                               </div>
                               
-                              {/* --- GOLES (1.5 / 2.5 / 3.5 / 4.5) --- */}
+                              {/* --- GOLES (2.5 / 3.5 / 4.5) --- */}
                               <div>
                                   <div className="flex justify-between items-center mb-2">
-                                      <h3 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1"><Layers size={12}/> Goles (1.5 - 4.5)</h3>
+                                      <h3 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1"><Layers size={12}/> Goles (2.5 - 4.5)</h3>
                                       <span className="text-[9px] bg-gray-100 px-2 rounded text-gray-400">Total apostado: {getOddsInfo(currentMatch.id, 'Mas de 2.5', 'goals').totalPool}€</span>
                                   </div>
                                   <div className="grid grid-cols-2 gap-2">
-                                      {/* 1.5 */}
-                                      <OddBtn target="Mas de 1.5" odd={getOddsInfo(currentMatch.id, 'Mas de 1.5', 'goals').odd} active={isSelected('goals', 'Mas de 1.5')} onClick={()=>toggleSelection('goals', 'Mas de 1.5')} />
-                                      <OddBtn target="Menos de 1.5" odd={getOddsInfo(currentMatch.id, 'Menos de 1.5', 'goals').odd} active={isSelected('goals', 'Menos de 1.5')} onClick={()=>toggleSelection('goals', 'Menos de 1.5')} />
-
                                       {/* 2.5 */}
                                       <OddBtn target="Mas de 2.5" odd={getOddsInfo(currentMatch.id, 'Mas de 2.5', 'goals').odd} active={isSelected('goals', 'Mas de 2.5')} onClick={()=>toggleSelection('goals', 'Mas de 2.5')} />
                                       <OddBtn target="Menos de 2.5" odd={getOddsInfo(currentMatch.id, 'Menos de 2.5', 'goals').odd} active={isSelected('goals', 'Menos de 2.5')} onClick={()=>toggleSelection('goals', 'Menos de 2.5')} />
