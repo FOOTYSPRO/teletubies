@@ -15,8 +15,13 @@ export default function RankingPage() {
         name: doc.id,
         ...doc.data()
       }));
-      // Ordenar por VICTORIAS, y si empatan, por PARTIDOS JUGADOS (más experiencia)
-      const sorted = data.sort((a:any, b:any) => (b.ganados || 0) - (a.ganados || 0));
+      // Ordenar por PARTIDOS GANADOS (Descendente)
+      // Si empatan, por torneos ganados.
+      const sorted = data.sort((a:any, b:any) => {
+          const winsDiff = (b.ganados || 0) - (a.ganados || 0);
+          if (winsDiff !== 0) return winsDiff;
+          return (b.torneos || 0) - (a.torneos || 0);
+      });
       setRanking(sorted);
     });
     return () => unsub();
@@ -35,6 +40,7 @@ export default function RankingPage() {
             <tr>
               <th className="p-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Pos</th>
               <th className="p-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Jugador</th>
+              <th className="p-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">🏆</th>
               <th className="p-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">J</th>
               <th className="p-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">G</th>
             </tr>
@@ -49,12 +55,13 @@ export default function RankingPage() {
                   {player.name}
                   {idx === 0 && <span className="bg-yellow-100 text-yellow-700 text-[9px] px-1 rounded">GOAT</span>}
                 </td>
-                <td className="p-4 text-center font-mono font-bold text-sm text-gray-500">{player.jugados || 0}</td>
+                <td className="p-4 text-center font-bold text-sm text-yellow-600">{player.torneos || 0}</td>
+                <td className="p-4 text-center font-mono font-bold text-sm text-gray-400">{player.jugados || 0}</td>
                 <td className="p-4 text-right font-mono font-black text-lg text-blue-600">{player.ganados || 0}</td>
               </tr>
             ))}
             {ranking.length === 0 && (
-              <tr><td colSpan={4} className="p-8 text-center text-gray-300 italic text-sm">Aún no hay datos de liga.</td></tr>
+              <tr><td colSpan={5} className="p-8 text-center text-gray-300 italic text-sm">Aún no hay datos de liga.</td></tr>
             )}
           </tbody>
         </table>
