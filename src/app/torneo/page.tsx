@@ -7,7 +7,6 @@ import { doc, setDoc, writeBatch, increment, addDoc, collection, serverTimestamp
 import confetti from 'canvas-confetti';
 import { Settings, Trash2, Users, Bot, UserPlus, Trophy } from 'lucide-react';
 
-// 🆕 LISTA DE EQUIPOS ACTUALIZADA
 const TEAMS_REAL = [
     "Arsenal 🔴", "Inter ⚫🔵", "Barça 🔵🔴", "Atleti 🔴⚪", 
     "PSV", "Leverkusen ⚫🔴", "Juve ⚫⚪", "Dortmund 🟡⚫", 
@@ -26,6 +25,7 @@ export default function TorneoPage() {
 
   const togglePlayerSelection = (name: string) => { if (selectedPlayers.includes(name)) setSelectedPlayers(selectedPlayers.filter(p => p !== name)); else { if (selectedPlayers.length >= 16) return alert("Máximo 16 players."); setSelectedPlayers([...selectedPlayers, name]); } };
   const addCpu = () => { if (selectedPlayers.length >= 16) return; const cpuName = `CPU ${selectedPlayers.filter(p => p.startsWith('CPU')).length + 1}`; setSelectedPlayers([...selectedPlayers, cpuName]); };
+  
   const createTeams = (individualPlayers: string[]) => { const shuffled = [...individualPlayers].sort(() => Math.random() - 0.5); const teams: string[] = []; for (let i = 0; i < shuffled.length; i += 2) { if (shuffled[i+1]) teams.push(`${shuffled[i]} & ${shuffled[i+1]}`); else teams.push(`${shuffled[i]} & CPU Relleno`); } return teams; };
   
   const handleCrearTorneo = async () => { 
@@ -55,7 +55,6 @@ export default function TorneoPage() {
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: clean }, { merge: true });
   };
 
-  // --- 🔥 FINALIZAR ---
   const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
     if (s1 === s2) return alert("❌ En eliminatorias no hay empate.");
     const m = matches.find((x: any) => x.id === matchId);
@@ -84,8 +83,8 @@ export default function TorneoPage() {
       pending.forEach((b: any) => {
           if (b.type !== 'combined') {
               const type = (b.type === 'goals') ? 'goals' : 'winner';
-              pools[type] += (b.amount || 0);
-              if (checkSelection(b.type || 'winner', b.chosenWinner)) winningPools[type] += (b.amount || 0);
+              pools[type] += (Number(b.amount) || 0);
+              if (checkSelection(b.type || 'winner', b.chosenWinner)) winningPools[type] += (Number(b.amount) || 0);
           }
       });
       
@@ -106,7 +105,7 @@ export default function TorneoPage() {
                   odd = virtualTotal / virtualTarget;
                   if (odd < 1.05) odd = 1.05; if (odd > 10.0) odd = 10.0;
               }
-              const profit = Math.floor(b.amount * odd);
+              const profit = Math.floor(Number(b.amount) * odd);
               batch.update(doc(db, "users", b.bettor), { balance: increment(profit) }); 
               batch.update(ref, { status: 'won', finalOdd: odd.toFixed(2) });
           } else { batch.update(ref, { status: 'lost' }); }
