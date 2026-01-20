@@ -1,480 +1,536 @@
 ﻿'use client';
 
-import React, { useEffect, useState, useRef, Suspense } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { collection, getDocs, doc, onSnapshot, query, limit, orderBy, addDoc } from 'firebase/firestore';
-import { ref, getDownloadURL, uploadBytes } from 'firebase/storage';
-// Asegúrate de haber hecho el PASO 2 (exportar storage en firebase.ts)
-import { db, storage } from '../lib/firebase'; 
-import { Hammer, Star, ChevronLeft, ChevronRight, CheckCircle, Search, X, Camera } from 'lucide-react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
+import { db } from '@/lib/firebase';
+import { 
+  doc, onSnapshot, setDoc, collection, query, orderBy, increment, 
+  addDoc, serverTimestamp, getDocs, writeBatch, deleteDoc 
+} from 'firebase/firestore';
+import confetti from 'canvas-confetti';
+import { Trophy, Users, Banknote, Dices, Skull, ChevronLeft, ChevronRight, CheckCircle, Search, Settings, LogOut, Lock } from 'lucide-react';
 
 // --- TIPOS ---
-interface Product { id: string; name: string; base_price: number; category?: string; images?: string[]; createdAt?: any; sales?: number; }
-interface Review { id: string; userName: string; rating: number; comment: string; createdAt: any; purchasedItems?: string[]; photos?: string[]; }
+type Match = { 
+  id: number; 
+  p1: string; p1Team?: string | null; p1Club?: string | null;
+  p2: string; p2Team?: string | null; p2Club?: string | null;
+  score1?: number; score2?: number; 
+  winner?: string; 
+  round: 'Q' | 'S' | 'F' | '3rd'; 
+  isBye?: boolean;
+};
 
-const STARTER_REVIEWS: Review[] = [
-    { id: 'st-1', userName: 'Alejandro Martín', rating: 5, comment: 'La calidad de la tela es increíble, idéntica a la oficial.', createdAt: new Date(), purchasedItems: ['1ª Real Madrid'] },
-    { id: 'st-2', userName: 'Sofía Rodríguez', rating: 5, comment: 'Perfecto para regalo.', createdAt: new Date(), purchasedItems: ['Retro Barcelona'] },
-    { id: 'st-3', userName: 'David García', rating: 4, comment: 'Buena atención por WhatsApp.', createdAt: new Date(), purchasedItems: ['2ª Liverpool'] },
+type UserProfile = { id: string; clubName: string; balance: number; password?: string; };
+type Bet = { id: string; matchId: number; bettor: string; chosenWinner: string; amount: number; status: 'pending' | 'won' | 'lost'; };
+type HistoryItem = { winner: string; winnerTeam?: string; date: any; type: string };
+type Tab = 'perfil' | 'fifa' | 'apuestas' | 'pachanga' | 'castigos';
+
+const BYE_NAME = "Pase Directo ➡️";
+const STARTING_BALANCE = 1000;
+
+// --- DATOS FIJOS ---
+const TEAMS_REAL = ["Man. City", "Real Madrid", "Bayern", "Liverpool", "Arsenal", "Inter", "PSG", "Barça", "Atleti", "Leverkusen", "Milan", "Juve", "Dortmund", "Chelsea", "Napoli", "Spurs", "Villa", "Newcastle"];
+const TEAMS_FUNNY = ["Aston Birra", "Vodka Juniors", "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo", "Schalke Te Meto", "Abuelos FC", "Patético", "Bajern", "Real Suciedad", "Olimpique", "West Jamón", "Levante en Barra", "Borussia Birra", "Peshownal", "Estrella Coja", "Fenerbache"];
+const EXCUSAS = ["Mando roto", "Lag", "Handicap", "Sol en la cara", "Probando tácticas", "Árbitro comprado", "Jugador bugueado", "Dedos fríos", "5 defensas", "Portero manco"];
+const HERO_SLIDES = [
+    { title: "TELETUBIES LEAGUE", subtitle: "Torneos, Apuestas y Gloria.", bg: "linear-gradient(to right, #000000, #434343)" },
+    { title: "¿QUIÉN ES EL REY?", subtitle: "Demuestra tu nivel en el campo.", bg: "linear-gradient(to right, #0f2027, #203a43, #2c5364)" },
+    { title: "APUESTA Y GANA", subtitle: "Multiplica tus monedas o vete a casa.", bg: "linear-gradient(to right, #8e2de2, #4a00e0)" }
 ];
 
-// --- COMPONENTE PRINCIPAL ---
-export default function CatalogPage() {
+export default function Page() {
   return (
-    <Suspense fallback={<div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', color:'#111'}}>Cargando...</div>}>
-      <CatalogContent />
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-black">Cargando...</div>}>
+      <AppContent />
     </Suspense>
   );
 }
 
-function CatalogContent() {
-  // ESTADOS
-  const [allProducts, setAllProducts] = useState<Product[]>([]); 
-  const [latestProducts, setLatestProducts] = useState<Product[]>([]); 
-  const [bestSellers, setBestSellers] = useState<Product[]>([]); 
-  const [reviews, setReviews] = useState<Review[]>([]);
+function AppContent() {
+  const [activeTab, setActiveTab] = useState<Tab>('fifa');
   
-  const [isMaintenance, setIsMaintenance] = useState(false);
-  const [globalDiscount, setGlobalDiscount] = useState(0); 
-  const [categoryDiscounts, setCategoryDiscounts] = useState<Record<string, number>>({});
+  // DATOS
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
+  const [fifaMatches, setFifaMatches] = useState<Match[]>([]);
+  const [activeBets, setActiveBets] = useState<Bet[]>([]);
+  const [ranking, setRanking] = useState<{nombre: string, puntos: number, victorias: number}[]>([]);
+  
+  // ESTADO INTERFAZ
+  const [showSettings, setShowSettings] = useState(false);
+  const [gameMode, setGameMode] = useState<'1vs1' | '2vs2'>('1vs1');
+  const [mayorPaliza, setMayorPaliza] = useState<{winner: string, loser: string, diff: number, result: string} | null>(null);
+  const [resultadoRuleta, setResultadoRuleta] = useState<string>("Gira la ruleta...");
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [excusa, setExcusa] = useState<string | null>(null);
+  
+  // FORMS
+  const [loginName, setLoginName] = useState("");
+  const [loginPass, setLoginPass] = useState("");
+  const [regName, setRegName] = useState("");
+  const [regClub, setRegClub] = useState("");
+  const [regPass, setRegPass] = useState("");
+  const [isRegistering, setIsRegistering] = useState(false);
+  
+  // APUESTAS
+  const [betAmount, setBetAmount] = useState<number>(100);
+  const [selectedMatchId, setSelectedMatchId] = useState<number | null>(null);
+  const [betTarget, setBetTarget] = useState<string>("");
 
-  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
-  const [configLoading, setConfigLoading] = useState(true);
+  // EXTRA
+  const [pachangaInput, setPachangaInput] = useState("");
+  const [equipoA, setEquipoA] = useState<string[]>([]);
+  const [equipoB, setEquipoB] = useState<string[]>([]);
 
-  const [heroSlides, setHeroSlides] = useState<any[]>([]); 
-  const [qualityImages, setQualityImages] = useState<string[]>([]);
-  const [catTiles, setCatTiles] = useState<any[]>([]); 
-
-  const searchParams = useSearchParams();
-  const searchQuery = searchParams.get('q') ? decodeURIComponent(searchParams.get('q')!).trim() : ''; 
-  const categoryParam = searchParams.get('category');
-  const categoryFilter = categoryParam ? decodeURIComponent(categoryParam).trim() : ''; 
-
-  // DATA FETCHING
+  // LISTENERS
   useEffect(() => {
-      // Configuración
-      const unsubConfig = onSnapshot(doc(db, 'settings', 'config'), (doc) => {
-          if (doc.exists()) {
-              const data = doc.data();
-              setIsMaintenance(data.maintenance);
-              setGlobalDiscount(data.globalDiscount || 0); 
-              if (data.heroSlides && Array.isArray(data.heroSlides)) setHeroSlides(data.heroSlides);
-              if (data.catTiles && data.catTiles.length > 0) setCatTiles(data.catTiles);
-              if (data.qualityGallery && Array.isArray(data.qualityGallery)) setQualityImages(data.qualityGallery);
+    const unsubSala = onSnapshot(doc(db, "sala", "principal"), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setFifaMatches(Array.isArray(data.fifaMatches) ? data.fifaMatches : []);
+        if (data.equipoA) setEquipoA(data.equipoA);
+        if (data.equipoB) setEquipoB(data.equipoB);
+        if (data.ultimoCastigo) setResultadoRuleta(data.ultimoCastigo);
+        if (data.fifaMatches) calcularPaliza(data.fifaMatches);
+      }
+    });
+    const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("balance", "desc")), (snap) => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() })) as UserProfile[];
+        setUsers(list);
+        if (currentUser) { const updated = list.find(u => u.id === currentUser.id); if (updated) setCurrentUser(updated); }
+    });
+    const unsubBets = onSnapshot(query(collection(db, "bets")), (snap) => setActiveBets(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Bet[]));
+    const unsubRank = onSnapshot(query(collection(db, "ranking"), orderBy("puntos", "desc")), (snap) => setRanking(snap.docs.map(d => ({ nombre: d.id, ...d.data() } as any))));
+    
+    return () => { unsubSala(); unsubUsers(); unsubBets(); unsubRank(); };
+  }, [currentUser?.id]);
+
+  // LOGICA AUTH
+  const handleLogin = () => {
+      const user = users.find(u => u.id.toLowerCase() === loginName.toLowerCase());
+      if (!user || user.password !== loginPass) return alert("Credenciales incorrectas");
+      setCurrentUser(user); setLoginName(""); setLoginPass("");
+  };
+  const handleRegister = async () => {
+      if (!regName || !regClub || !regPass) return alert("Rellena todo");
+      if (users.find(u => u.id.toLowerCase() === regName.toLowerCase())) return alert("Nombre ocupado");
+      const newUser = { clubName: regClub, balance: STARTING_BALANCE, password: regPass };
+      await setDoc(doc(db, "users", regName), newUser);
+      setCurrentUser({ id: regName, ...newUser }); setIsRegistering(false);
+  };
+  const logout = () => { setCurrentUser(null); setShowSettings(false); };
+
+  // LOGICA TORNEO
+  const togglePlayerSelection = (name: string) => {
+      if (selectedPlayers.includes(name)) setSelectedPlayers(selectedPlayers.filter(p => p !== name));
+      else { if (selectedPlayers.length >= 16) return alert("Máximo 16"); setSelectedPlayers([...selectedPlayers, name]); }
+  };
+
+  const handleCrearTorneo = async () => {
+      if (selectedPlayers.length < 2) return alert("Mínimo 2 jugadores");
+      let players = [...selectedPlayers];
+      let targetSize = players.length <= 4 ? 4 : 8;
+      if (players.length > 8) return alert("Máx 8 por ahora"); // Limite cuadro
+      while (players.length < targetSize) players.push(BYE_NAME);
+
+      const shuffledP = [...players].sort(() => Math.random() - 0.5);
+      const shuffledT = [...TEAMS_REAL].sort(() => Math.random() - 0.5);
+
+      const getMatchData = (idx: number) => {
+          const name = shuffledP[idx];
+          const isBye = name === BYE_NAME;
+          const u = users.find(user => user.id === name);
+          return { name: name, team: isBye ? null : shuffledT[idx], club: isBye ? null : (u?.clubName || "Invitado") };
+      };
+
+      let matches: Match[] = [];
+      // Generar cuadro simple
+      if (targetSize === 4) {
+          matches = [
+              { id: 0, p1: getMatchData(0).name, p1Team: getMatchData(0).team, p1Club: getMatchData(0).club, p2: getMatchData(1).name, p2Team: getMatchData(1).team, p2Club: getMatchData(1).club, round: 'S' },
+              { id: 1, p1: getMatchData(2).name, p1Team: getMatchData(2).team, p1Club: getMatchData(2).club, p2: getMatchData(3).name, p2Team: getMatchData(3).team, p2Club: getMatchData(3).club, round: 'S' },
+              { id: 2, p1: "Esperando...", p2: "Esperando...", round: 'F' }, { id: 3, p1: "Esperando...", p2: "Esperando...", round: '3rd' }
+          ];
+      } else {
+          matches = [
+              { id: 0, p1: getMatchData(0).name, p1Team: getMatchData(0).team, p1Club: getMatchData(0).club, p2: getMatchData(1).name, p2Team: getMatchData(1).team, p2Club: getMatchData(1).club, round: 'Q' },
+              { id: 1, p1: getMatchData(2).name, p1Team: getMatchData(2).team, p1Club: getMatchData(2).club, p2: getMatchData(3).name, p2Team: getMatchData(3).team, p2Club: getMatchData(3).club, round: 'Q' },
+              { id: 2, p1: getMatchData(4).name, p1Team: getMatchData(4).team, p1Club: getMatchData(4).club, p2: getMatchData(5).name, p2Team: getMatchData(5).team, p2Club: getMatchData(5).club, round: 'Q' },
+              { id: 3, p1: getMatchData(6).name, p1Team: getMatchData(6).team, p1Club: getMatchData(6).club, p2: getMatchData(7).name, p2Team: getMatchData(7).team, p2Club: getMatchData(7).club, round: 'Q' },
+              { id: 4, p1: "Esperando...", p2: "Esperando...", round: 'S' }, { id: 5, p1: "Esperando...", p2: "Esperando...", round: 'S' },
+              { id: 6, p1: "Esperando...", p2: "Esperando...", round: 'F' }, { id: 7, p1: "Esperando...", p2: "Esperando...", round: '3rd' }
+          ];
+      }
+
+      // Propagar BYEs iniciales
+      matches.forEach(m => { if(m.p2===BYE_NAME){m.winner=m.p1;m.isBye=true} else if(m.p1===BYE_NAME){m.winner=m.p2;m.isBye=true} });
+      const propagate = (tIdx: number, slot: 'p1'|'p2', s: Match) => {
+        const wKey = s.winner===s.p1?'p1':'p2';
+        matches[tIdx][slot] = s.winner!;
+        matches[tIdx][slot==='p1'?'p1Team':'p2Team'] = s[wKey==='p1'?'p1Team':'p2Team'] || null;
+        matches[tIdx][slot==='p1'?'p1Club':'p2Club'] = s[wKey==='p1'?'p1Club':'p2Club'] || null;
+      };
+      if(targetSize===4) { if(matches[0].winner) propagate(2,'p1',matches[0]); if(matches[1].winner) propagate(2,'p2',matches[1]); }
+      else { if(matches[0].winner) propagate(4,'p1',matches[0]); if(matches[1].winner) propagate(4,'p2',matches[1]); if(matches[2].winner) propagate(5,'p1',matches[2]); if(matches[3].winner) propagate(5,'p2',matches[3]); }
+
+      const clean = matches.map(m => JSON.parse(JSON.stringify(m, (k, v) => v === undefined ? null : v)));
+      await setDoc(doc(db, "sala", "principal"), { fifaMatches: clean }, { merge: true });
+      setActiveTab('fifa');
+  };
+
+  const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
+    if (s1 === s2) return alert("❌ Empate prohibido.");
+    const m = fifaMatches.find(x => x.id === matchId);
+    if (!m) return;
+    
+    const isP1 = s1 > s2;
+    const winner = isP1 ? m.p1 : m.p2; const loser = isP1 ? m.p2 : m.p1;
+    const wTeam = isP1 ? m.p1Team : m.p2Team; const wClub = isP1 ? m.p1Club : m.p2Club;
+    const lTeam = isP1 ? m.p2Team : m.p1Team; const lClub = isP1 ? m.p2Club : m.p1Club;
+
+    try {
+      // APUESTAS
+      const pending = activeBets.filter(b => b.matchId === matchId && b.status === 'pending');
+      const batch = writeBatch(db);
+      pending.forEach(b => {
+          const ref = doc(db, "bets", b.id);
+          if (b.chosenWinner === winner) { batch.update(doc(db, "users", b.bettor), { balance: increment(b.amount * 2) }); batch.update(ref, { status: 'won' }); }
+          else batch.update(ref, { status: 'lost' });
+      });
+      await batch.commit();
+
+      if (gameMode === '1vs1' && !m.isBye && winner !== "Esperando...") { await setDoc(doc(db, "ranking", winner), { puntos: increment(3), victorias: increment(1) }, { merge: true }); }
+      
+      let next = [...fifaMatches];
+      next = next.map(x => x.id === matchId ? { ...x, score1: s1, score2: s2, winner: winner } : x);
+
+      const send = (tId: number, slot: 'p1'|'p2', n: string, t: any, c: any) => { if(next[tId]){ next[tId][slot]=n; next[tId][slot==='p1'?'p1Team':'p2Team']=t; next[tId][slot==='p1'?'p1Club':'p2Club']=c; }};
+      const isSmall = fifaMatches.length === 4;
+      if (isSmall) {
+          if(matchId===0) { send(2,'p1',winner,wTeam,wClub); send(3,'p1',loser,lTeam,lClub); }
+          if(matchId===1) { send(2,'p2',winner,wTeam,wClub); send(3,'p2',loser,lTeam,lClub); }
+      } else {
+          if(matchId<=3) send(matchId < 2 ? 4 : 5, matchId % 2 === 0 ? 'p1' : 'p2', winner, wTeam, wClub);
+          if(matchId===4) { send(6,'p1',winner,wTeam,wClub); send(7,'p1',loser,lTeam,lClub); }
+          if(matchId===5) { send(6,'p2',winner,wTeam,wClub); send(7,'p2',loser,lTeam,lClub); }
+      }
+
+      await setDoc(doc(db, "sala", "principal"), { fifaMatches: next }, { merge: true });
+      const finalId = isSmall ? 2 : 6;
+      if(matchId===finalId) { confetti({particleCount:500}); await addDoc(collection(db,"history"),{winner,winnerTeam:wTeam||"-",date:serverTimestamp(),type:gameMode}); }
+      
+    } catch (e) { console.error(e); }
+  };
+
+  const realizarApuesta = async () => {
+      if (!currentUser || selectedMatchId===null || !betTarget || betAmount<=0) return alert("Rellena todo");
+      if (currentUser.balance < betAmount) return alert("Saldo insuficiente");
+      await setDoc(doc(db, "users", currentUser.id), { balance: increment(-betAmount) }, { merge: true });
+      await addDoc(collection(db, "bets"), { matchId: selectedMatchId, bettor: currentUser.id, chosenWinner: betTarget, amount: betAmount, status: 'pending' });
+      alert("✅ Apuesta realizada");
+  };
+
+  const calcularPaliza = (matches: Match[]) => { 
+      let max=0; let p=null; 
+      matches.forEach(m=>{
+          if(m.winner && m.score1!==undefined && m.score2!==undefined){
+              const d=Math.abs(m.score1-m.score2);
+              if(d>=3 && d>max){ max=d; const w=m.score1>m.score2; p={winner:w?m.p1:m.p2,loser:w?m.p2:m.p1,diff:d,result:`${m.score1}-${m.score2}`}; }
           }
-          setConfigLoading(false);
-      });
-      // Descuentos
-      const unsubDiscounts = onSnapshot(doc(db, 'settings', 'discounts'), (doc) => {
-          if (doc.exists()) setCategoryDiscounts(doc.data().categories || {});
-      });
-      return () => { unsubConfig(); unsubDiscounts(); };
-  }, []);
+      }); 
+      setMayorPaliza(p); 
+  };
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'products'));
-        const productsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Product[];
-        setAllProducts(productsData);
-        
-        const sortedBySales = [...productsData].sort((a, b) => (b.sales || 0) - (a.sales || 0));
-        setBestSellers(sortedBySales.slice(0, 6)); 
+  const girarRuleta = async () => {
+      setIsSpinning(true); const list=["10 Flexiones", "Baila 30s", "Chupito", "Cascada", "Verdad o Reto", "Haz el pino", "Invita una ronda"];
+      let i=0; const int=setInterval(()=>{setResultadoRuleta(list[i%list.length]);i++},80);
+      setTimeout(async()=>{clearInterval(int);const f=list[Math.floor(Math.random()*list.length)];setResultadoRuleta(f);setIsSpinning(false);await setDoc(doc(db,"sala","principal"),{ultimoCastigo:f},{merge:true});},2000);
+  };
 
-        const sortedByDate = [...productsData].sort((a, b) => {
-            const dateA = a.createdAt?.seconds || (new Date(a.createdAt).getTime() / 1000) || 0;
-            const dateB = b.createdAt?.seconds || (new Date(b.createdAt).getTime() / 1000) || 0;
-            return dateB - dateA;
-        });
-        setLatestProducts(sortedByDate.slice(0, 4));
+  const handleSorteoPachanga = () => {
+      const n=pachangaInput.split(/[\n,]+/).map(x=>x.trim()).filter(x=>x);
+      if(n.length<2)return alert("Min 2");
+      const s=[...n].sort(()=>Math.random()-0.5); const m=Math.ceil(s.length/2);
+      setDoc(doc(db,"sala","principal"),{equipoA:s.slice(0,m),equipoB:s.slice(m)},{merge:true});
+  };
 
-        const qReviews = query(collection(db, 'reviews'), orderBy('createdAt', 'desc'), limit(10));
-        const revSnap = await getDocs(qReviews);
-        const realReviews = revSnap.docs.map(d => ({id: d.id, ...d.data()})) as Review[];
-        setReviews(realReviews.length > 0 ? realReviews : STARTER_REVIEWS);
-
-      } catch (error) { console.error(error); } 
-    }
-    fetchData();
-  }, []);
-
-  if (isMaintenance) return <div style={{ height: '100vh', background: 'white', color: '#111', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}><Hammer size={64} color="#111" style={{ marginBottom: '20px' }} /><h1>Mantenimiento</h1></div>;
-
-  const filteredProducts = allProducts.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = categoryFilter === '' || (product.category && product.category.toLowerCase().trim() === categoryFilter.toLowerCase());
-    return matchesSearch && matchesCategory;
-  });
-
-  const isHomeView = !searchQuery && !categoryFilter;
+  const limpiarPizarra = async () => {
+      if(!confirm("¿Resetear cuadro actual?")) return;
+      const b=writeBatch(db); b.set(doc(db,"sala","principal"),{equipoA:[],equipoB:[],fifaMatches:[],ultimoCastigo:"..."}); 
+      (await getDocs(query(collection(db,"bets")))).forEach(d=>b.delete(d.ref));
+      await b.commit(); setShowSettings(false);
+  };
 
   return (
-    <div style={{ fontFamily: 'var(--font-inter)', background: '#ffffff', minHeight: '100vh', color: '#111111' }}>
+    <div style={{ fontFamily: 'system-ui, sans-serif', background: '#ffffff', minHeight: '100vh', color: '#111' }}>
         
-        {/* Estilos Globales */}
+        {/* CSS GLOBAL PARA MARQUESINA Y ESTILOS */}
         <style dangerouslySetInnerHTML={{__html: `
-            @keyframes infinite-scroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
-            .marquee-container { display: flex; overflow: hidden; user-select: none; gap: 0; width: 100%; }
-            .marquee-track { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-start; gap: 20px; min-width: 100%; padding-right: 20px; animation: infinite-scroll 40s linear infinite; }
-            .marquee-container:hover .marquee-track { animation-play-state: paused; }
+            @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+            .animate-marquee { animation: marquee 20s linear infinite; }
             .hide-scrollbar::-webkit-scrollbar { display: none; }
-            .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-            .fade-in-section { opacity: 0; transform: translateY(30px); transition: opacity 0.8s ease-out, transform 0.8s ease-out; will-change: opacity, visibility; }
-            .fade-in-section.is-visible { opacity: 1; transform: none; }
-            .skeleton { background: #e0e0e0; border-radius: 8px; animation: pulse 1.5s infinite ease-in-out; }
-            @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+            .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         `}} />
 
-      {/* 1. HERO CAROUSEL */}
-      {isHomeView && (
-          configLoading ? ( <div className="skeleton" style={{ height: '600px', width: '100%', borderRadius:0 }}></div> ) : ( <HeroCarousel slides={heroSlides} /> )
-      )}
+        {/* HERO CAROUSEL */}
+        <HeroCarousel />
 
-      {globalDiscount > 0 && (
-          <div style={{ background: '#111', color: 'white', textAlign: 'center', padding: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing:'1px', fontSize:'0.85rem' }}>
-              🔥 ¡OFERTA LIMITADA! Todo al {globalDiscount}% de descuento 🔥
-          </div>
-      )}
+        {/* HEADER (MENU SUPERIOR LIMPIO) */}
+        <div className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
+            <h1 className="text-lg font-black tracking-tighter uppercase italic">TELETUBIES <span className="text-blue-600">LEAGUE</span></h1>
+            <div className="flex gap-4">
+                {currentUser ? (
+                    <div className="text-right leading-tight cursor-pointer" onClick={()=>setActiveTab('perfil')}>
+                        <p className="font-bold text-xs uppercase">{currentUser.id}</p>
+                        <p className="font-mono text-xs text-green-600 font-black">{currentUser.balance} €</p>
+                    </div>
+                ) : (
+                    <button onClick={()=>setActiveTab('perfil')} className="text-xs font-bold bg-black text-white px-3 py-1.5 rounded-full">LOGIN</button>
+                )}
+                <button onClick={()=>setShowSettings(true)}><Settings size={20}/></button>
+            </div>
+        </div>
 
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '40px 20px' }}>
+        {/* CONTENIDO PRINCIPAL */}
+        <div className="max-w-4xl mx-auto p-4 pb-24">
+            
+            {/* TABS DE NAVEGACION (Estilo Categorías) */}
+            <div className="flex gap-2 overflow-x-auto hide-scrollbar mb-6 pb-2">
+                {[
+                    {id:'fifa', label:'Torneo', icon:<Trophy size={16}/>},
+                    {id:'apuestas', label:'Apuestas', icon:<Banknote size={16}/>},
+                    {id:'perfil', label:'Perfil', icon:<Users size={16}/>},
+                    {id:'pachanga', label:'Mixer', icon:<Dices size={16}/>},
+                    {id:'castigos', label:'Ruleta', icon:<Skull size={16}/>}
+                ].map(t => (
+                    <button key={t.id} onClick={()=>setActiveTab(t.id as Tab)} className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${activeTab===t.id ? 'bg-black text-white shadow-lg' : 'bg-gray-100 text-gray-500'}`}>
+                        {t.icon} {t.label}
+                    </button>
+                ))}
+            </div>
 
-        {isHomeView ? (
-            <>
-                <FadeIn>
-                    <div style={{ marginBottom: '60px' }}>
-                        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'30px'}}>
-                            <h2 style={{ fontSize: '1.8rem', margin: 0, fontWeight:'900', letterSpacing:'-1px', color: '#111' }}>Tendencias</h2>
-                            <Link href="/catalog" style={{textDecoration:'none', color:'#111', fontWeight:'bold', fontSize:'0.9rem', borderBottom:'1px solid #111'}}>Ver todo</Link>
-                        </div>
-                        {configLoading ? (
-                             <div style={{display:'flex', gap:'20px', overflow:'hidden'}}>{[1,2,3,4].map(i => <div key={i} className="skeleton" style={{width:'260px', height:'350px', flexShrink:0, borderRadius:'16px'}}></div>)}</div>
-                        ) : (
-                            <div style={{ display: 'flex', gap: '20px', overflowX: 'auto', paddingBottom: '30px', scrollSnapType: 'x mandatory' }} className="hide-scrollbar">
-                                {bestSellers.map(product => (
-                                    <div key={product.id} style={{ width: '260px', flexShrink: 0, scrollSnapAlign: 'start' }}>
-                                        <ProductCard product={product} globalDiscount={globalDiscount} categoryDiscounts={categoryDiscounts} />
-                                    </div>
+            {/* SECCIONES */}
+            
+            {/* FIFA */}
+            {activeTab === 'fifa' && (
+                <div className="fade-in">
+                    {fifaMatches.length === 0 ? (
+                        <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                            <h2 className="text-2xl font-black mb-4">Nueva Temporada</h2>
+                            <div className="flex gap-2 mb-6">
+                                <button onClick={()=>setGameMode('1vs1')} className={`px-4 py-2 rounded-lg font-bold text-xs ${gameMode==='1vs1'?'bg-black text-white':'bg-white border'}`}>1 vs 1</button>
+                                <button onClick={()=>setGameMode('2vs2')} className={`px-4 py-2 rounded-lg font-bold text-xs ${gameMode==='2vs2'?'bg-black text-white':'bg-white border'}`}>2 vs 2</button>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 mb-6">
+                                {users.map(u => (
+                                    <button key={u.id} onClick={()=>togglePlayerSelection(u.id)} className={`p-2 rounded-lg border text-xs font-bold truncate transition ${selectedPlayers.includes(u.id)?'bg-black text-white border-black':'bg-white text-gray-500'}`}>
+                                        {u.id}
+                                    </button>
                                 ))}
                             </div>
-                        )}
-                    </div>
-                </FadeIn>
-
-                <PromoSection />
-
-                <div style={{ marginBottom: '80px', marginTop: '40px' }}>
-                    <h2 style={{ fontSize: '1.8rem', margin: '0 0 30px 0', fontWeight:'900', letterSpacing:'-1px', color:'#111' }}>Explora por Liga</h2>
-                    {configLoading ? (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>{[1,2,3].map(i => <div key={i} className="skeleton" style={{height:'250px', borderRadius:'20px'}}></div>)}</div>
+                            <button onClick={handleCrearTorneo} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl shadow-xl hover:bg-blue-700 transition">CREAR TORNEO</button>
+                        </div>
                     ) : (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-                            {catTiles.map((tile, i) => ( <CategoryCard key={i} title={tile.title} img={tile.img} link={tile.link} /> ))}
+                        <div className="space-y-6">
+                            <div className="flex justify-between items-center">
+                                <h3 className="font-black text-xl">Cuadro Oficial</h3>
+                                <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-1 rounded">En Juego</span>
+                            </div>
+                            
+                            {/* LISTA PARTIDOS (DISEÑO PRODUCTO) */}
+                            <div className="grid gap-4 md:grid-cols-2">
+                                {/* Primera Ronda */}
+                                {(fifaMatches.length===4 ? [0,1] : [0,1,2,3]).map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}
+                                
+                                {/* Semis */}
+                                {fifaMatches.length===8 && [4,5].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} label="SEMIFINAL" />)}
+                                
+                                {/* Final y 3er Puesto */}
+                                <MatchCard m={fifaMatches[fifaMatches.length===4 ? 2 : 6]} onFinish={finalizarPartido} isFinal label="🏆 GRAN FINAL" />
+                                <MatchCard m={fifaMatches[fifaMatches.length===4 ? 3 : 7]} onFinish={finalizarPartido} label="🥉 3er PUESTO" />
+                            </div>
                         </div>
                     )}
                 </div>
+            )}
 
-                {qualityImages.length > 0 && !configLoading && (
-                    <div style={{ marginBottom: '80px' }}>
-                        <div style={{textAlign:'center', marginBottom:'40px'}}>
-                            <h2 style={{ fontSize: '1.8rem', margin: '0 0 10px 0', fontWeight:'900', letterSpacing:'-1px', color:'#111' }}>Nuestra Calidad</h2>
-                            <p style={{color:'#666', fontSize:'1rem'}}>Detalles que marcan la diferencia.</p>
-                        </div>
-                        <div className="marquee-container">
-                            <div className="marquee-track">
-                                {qualityImages.map((img, i) => ( <div key={`t1-${i}`} style={{ height: '300px', width: '300px', flexShrink: 0, borderRadius: '20px', overflow: 'hidden', background: '#f4f4f5', position: 'relative' }}> <Image src={img} alt="Calidad" fill style={{ objectFit: 'cover' }} sizes="300px" /> </div> ))}
+            {/* APUESTAS */}
+            {activeTab === 'apuestas' && (
+                <div className="fade-in space-y-6">
+                    {!currentUser ? <div className="text-center p-10 bg-gray-50 rounded-2xl">🔒 Inicia sesión para apostar</div> : (
+                        <>
+                            <div className="bg-black text-white p-6 rounded-2xl shadow-xl">
+                                <h2 className="text-xl font-black mb-4">PLACE YOUR BET</h2>
+                                {fifaMatches.length > 0 ? (
+                                    <div className="space-y-4">
+                                        <select className="w-full bg-gray-800 p-3 rounded-lg text-white border-none outline-none" onChange={e=>{const m=fifaMatches.find(x=>x.id===parseInt(e.target.value));setSelectedMatchId(parseInt(e.target.value));setBetTarget("");}}>
+                                            <option value="">Selecciona Partido</option>
+                                            {fifaMatches.filter(m => !m.winner && !m.isBye).map(m => (<option key={m.id} value={m.id}>{m.p1} vs {m.p2}</option>))}
+                                        </select>
+                                        {selectedMatchId !== null && (
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <button onClick={()=>setBetTarget(fifaMatches[selectedMatchId!].p1)} className={`p-3 rounded-lg font-bold text-sm ${betTarget===fifaMatches[selectedMatchId!].p1?'bg-green-500 text-black':'bg-gray-700'}`}>{fifaMatches[selectedMatchId!].p1}</button>
+                                                <button onClick={()=>setBetTarget(fifaMatches[selectedMatchId!].p2)} className={`p-3 rounded-lg font-bold text-sm ${betTarget===fifaMatches[selectedMatchId!].p2?'bg-green-500 text-black':'bg-gray-700'}`}>{fifaMatches[selectedMatchId!].p2}</button>
+                                            </div>
+                                        )}
+                                        <div className="flex items-center gap-3 bg-gray-800 p-3 rounded-lg"><span className="text-lg">💰</span><input type="number" className="bg-transparent w-full outline-none text-white font-mono" value={betAmount} onChange={e=>setBetAmount(parseInt(e.target.value))} /></div>
+                                        <button onClick={realizarApuesta} className="w-full bg-white text-black font-black p-3 rounded-lg hover:bg-gray-200">APOSTAR</button>
+                                    </div>
+                                ) : (<p className="text-gray-400 text-center text-sm">No hay partidos disponibles.</p>)}
                             </div>
-                            <div className="marquee-track" aria-hidden="true">
-                                {qualityImages.map((img, i) => ( <div key={`t2-${i}`} style={{ height: '300px', width: '300px', flexShrink: 0, borderRadius: '20px', overflow: 'hidden', background: '#f4f4f5', position: 'relative' }}> <Image src={img} alt="Calidad" fill style={{ objectFit: 'cover' }} sizes="300px" /> </div> ))}
+                            
+                            <div>
+                                <h3 className="font-black text-sm uppercase mb-3">Actividad del Mercado</h3>
+                                <div className="space-y-2">
+                                    {activeBets.filter(b => b.status === 'pending').map(b => (
+                                        <div key={b.id} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center text-sm">
+                                            <div><span className="font-bold">{b.bettor}</span> <span className="text-gray-400">vs</span> <span className="text-blue-600 font-bold">{b.chosenWinner}</span></div>
+                                            <span className="font-mono font-bold bg-gray-100 px-2 py-1 rounded">{b.amount} €</span>
+                                        </div>
+                                    ))}
+                                    {activeBets.filter(b => b.status === 'pending').length === 0 && <p className="text-gray-400 text-xs text-center italic">Todo tranquilo...</p>}
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                )}
-
-                <FadeIn>
-                    <div id="novedades" style={{ marginBottom: '60px' }}>
-                        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'30px'}}>
-                            <h2 style={{ fontSize: '1.8rem', margin: 0, fontWeight:'900', letterSpacing:'-1px', color:'#111' }}>Recién llegadas</h2>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '20px 15px' }}>
-                            {latestProducts.map((product) => (
-                                <ProductCard key={product.id} product={product} globalDiscount={globalDiscount} categoryDiscounts={categoryDiscounts} />
-                            ))}
-                        </div>
-                    </div>
-                </FadeIn>
-            </>
-        ) : (
-            <div id="catalogo">
-                <h2 style={{ fontSize: '2rem', marginBottom: '40px', fontWeight:'900', color: '#111' }}>
-                    {categoryFilter ? categoryFilter : `Resultados para "${searchQuery}"`}
-                </h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '20px 15px' }}>
-                    {filteredProducts.map((product) => (
-                        <FadeIn key={product.id}>
-                            <ProductCard key={product.id} product={product} globalDiscount={globalDiscount} categoryDiscounts={categoryDiscounts} />
-                        </FadeIn>
-                    ))}
+                        </>
+                    )}
                 </div>
-                {filteredProducts.length === 0 && (
-                    <div style={{ textAlign: 'center', padding: '100px 20px', color: '#666' }}>
-                        <Search size={48} style={{marginBottom:'20px', opacity:0.5}} />
-                        <p style={{fontSize: '1.2rem', fontWeight:'bold'}}>No hemos encontrado nada.</p>
-                        <Link href="/" style={{ color: '#111', textDecoration: 'underline', fontWeight: 'bold', marginTop:'20px', display:'inline-block' }}>Volver al inicio</Link>
+            )}
+
+            {/* PERFIL (LOGIN/DASHBOARD) */}
+            {activeTab === 'perfil' && (
+                <div className="fade-in">
+                    {!currentUser ? (
+                        <div className="max-w-sm mx-auto bg-white p-8 rounded-3xl border border-gray-100 shadow-xl">
+                            <h2 className="text-2xl font-black text-center mb-6">{isRegistering ? 'CREAR CUENTA' : 'ACCESO'}</h2>
+                            <input className="w-full bg-gray-50 p-4 rounded-xl mb-3 border-none outline-none" placeholder="Nombre" value={isRegistering ? regName : loginName} onChange={e => isRegistering ? setRegName(e.target.value) : setLoginName(e.target.value)} />
+                            {isRegistering && <input className="w-full bg-gray-50 p-4 rounded-xl mb-3 border-none outline-none" placeholder="Club (ej: Aston Birra)" value={regClub} onChange={e => setRegClub(e.target.value)} />}
+                            <input className="w-full bg-gray-50 p-4 rounded-xl mb-6 border-none outline-none" type="password" placeholder="Contraseña" value={isRegistering ? regPass : loginPass} onChange={e => isRegistering ? setRegPass(e.target.value) : setLoginPass(e.target.value)} />
+                            <button onClick={isRegistering ? handleRegister : handleLogin} className="w-full bg-black text-white font-bold p-4 rounded-xl mb-4">{isRegistering ? 'REGISTRARSE' : 'ENTRAR'}</button>
+                            <p className="text-center text-gray-500 text-sm cursor-pointer hover:underline" onClick={() => setIsRegistering(!isRegistering)}>{isRegistering ? '¿Ya tienes cuenta? Entra' : 'Crear una cuenta nueva'}</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-6">
+                            <div className="bg-black text-white p-6 rounded-3xl shadow-xl flex justify-between items-center">
+                                <div><h2 className="text-3xl font-black italic uppercase">{currentUser.id}</h2><p className="text-gray-400 text-sm font-bold uppercase">{currentUser.clubName}</p></div>
+                                <div className="text-right"><p className="text-xs text-gray-400 uppercase tracking-widest">Saldo</p><p className="text-4xl font-mono font-black text-green-400">{currentUser.balance}</p></div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm text-center"><p className="text-3xl font-black">{ranking.find(r=>r.nombre===currentUser.id)?.victorias || 0}</p><p className="text-xs text-gray-400 font-bold uppercase">Victorias</p></div>
+                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm text-center"><p className="text-3xl font-black">{ranking.find(r=>r.nombre===currentUser.id)?.puntos || 0}</p><p className="text-xs text-gray-400 font-bold uppercase">Puntos</p></div>
+                            </div>
+                            <button onClick={logout} className="w-full bg-gray-100 text-gray-500 font-bold p-4 rounded-xl flex items-center justify-center gap-2"><LogOut size={16}/> Cerrar Sesión</button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* PACHANGA */}
+            {activeTab === 'pachanga' && (
+                <div className="fade-in max-w-xl mx-auto space-y-4">
+                    <h2 className="text-xl font-black mb-4">GENERADOR DE EQUIPOS</h2>
+                    <textarea className="w-full h-32 bg-gray-50 border-none rounded-xl p-4 resize-none outline-none" placeholder="Pega la lista de nombres..." value={pachangaInput} onChange={e=>setPachangaInput(e.target.value)}></textarea>
+                    <button onClick={handleSorteoPachanga} className="w-full bg-black text-white font-black py-4 rounded-xl uppercase">Mezclar Equipos</button>
+                    {equipoA.length > 0 && (<div className="grid grid-cols-2 gap-4 mt-6"><div className="bg-red-50 p-4 rounded-xl border border-red-100 text-center"><h3 className="text-red-600 font-black mb-2">ROJOS</h3>{equipoA.map(p=><div key={p} className="text-sm font-medium">{p}</div>)}</div><div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-center"><h3 className="text-blue-600 font-black mb-2">AZULES</h3>{equipoB.map(p=><div key={p} className="text-sm font-medium">{p}</div>)}</div></div>)}
+                </div>
+            )}
+
+            {/* CASTIGOS */}
+            {activeTab === 'castigos' && (
+                <div className="fade-in max-w-md mx-auto text-center space-y-6">
+                    <div className="bg-white border border-gray-200 p-8 rounded-3xl shadow-lg">
+                        <h2 className="text-red-500 font-black uppercase tracking-widest mb-2 text-xs">El Castigo Es</h2>
+                        <p className={`text-2xl font-black ${isSpinning?'blur-sm text-gray-400':'text-black'}`}>{resultadoRuleta}</p>
                     </div>
-                )}
+                    <button onClick={()=>setExcusa(EXCUSAS[Math.floor(Math.random()*EXCUSAS.length)])} className="text-blue-500 text-xs font-bold hover:underline">Generar Excusa Aleatoria</button>
+                    {excusa && <p className="text-gray-500 italic text-sm">"{excusa}"</p>}
+                    <button onClick={girarRuleta} className="w-full bg-red-600 text-white font-black p-4 rounded-xl shadow-lg hover:bg-red-700 transition">GIRAR RULETA ☠️</button>
+                </div>
+            )}
+
+        </div>
+
+        {/* SETTINGS MODAL */}
+        {showSettings && (
+            <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={()=>setShowSettings(false)}>
+                <div className="bg-white p-6 rounded-2xl w-full max-w-xs space-y-3 shadow-2xl" onClick={e=>e.stopPropagation()}>
+                    <h3 className="text-lg font-black text-center uppercase mb-4">Admin Zone</h3>
+                    <button onClick={limpiarPizarra} className="w-full bg-gray-100 hover:bg-gray-200 text-black p-3 rounded-xl font-bold text-sm">🔄 Nuevo Torneo</button>
+                    <button onClick={()=>setShowSettings(false)} className="w-full text-center text-gray-400 text-xs mt-2 p-2">Cancelar</button>
+                </div>
             </div>
         )}
 
-      </div>
-
-      {isHomeView && (
-        <div style={{ background: '#f9f9f9', padding: '80px 20px', borderTop: '1px solid #eee' }}>
-            <div style={{ maxWidth: '1000px', margin: '0 auto', textAlign: 'center' }}>
-                <h2 style={{ fontSize: '1.8rem', color: '#111', marginBottom: '10px', fontWeight:'900', letterSpacing:'-1px' }}>La comunidad habla</h2>
-                <p style={{color:'#666', marginBottom:'40px', fontSize:'1rem'}}>Únete a los más de 500 clientes satisfechos.</p>
-                <ReviewsCarousel reviews={reviews} />
-                <button onClick={() => setIsReviewModalOpen(true)} style={{ marginTop: '40px', background: 'white', border: '1px solid #111', color: '#111', padding: '12px 30px', borderRadius: '50px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 'bold', transition:'all 0.3s' }}>Escribir una reseña</button>
+        {/* EXTRAS FLOTANTES */}
+        {mayorPaliza && (<div className="fixed top-20 left-1/2 -translate-x-1/2 w-11/12 max-w-sm bg-black text-white p-4 rounded-xl flex items-center justify-between shadow-2xl z-40 animate-in slide-in-from-top-4 border-l-4 border-pink-500"><div className="text-xs"><p className="text-pink-500 font-bold uppercase">Humillación</p><p>{mayorPaliza.winner} vs {mayorPaliza.loser}</p></div><span className="text-xl font-black italic">{mayorPaliza.result}</span></div>)}
+        
+        {/* MARQUESINA FOOTER */}
+        <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 overflow-hidden z-40 py-2">
+            <div className="animate-marquee whitespace-nowrap flex gap-12">
+                {[...Array(2)].flatMap(() => ["⚽ FIFA TOURNAMENT", "🏆 CHAMPIONS LEAGUE", "💰 PLACE YOUR BETS", "🔥 WIN OR GO HOME"]).map((txt, i) => (
+                    <span key={i} className="text-xs font-black text-gray-300 uppercase tracking-widest">{txt}</span>
+                ))}
             </div>
         </div>
-      )}
 
-      {isReviewModalOpen && <ReviewModal onClose={() => setIsReviewModalOpen(false)} />}
     </div>
   );
 }
 
-// -----------------------------------------------------------
-// SUB-COMPONENTES (INTEGRADOS PARA EVITAR ERRORES DE RUTA)
-// -----------------------------------------------------------
+// --- SUBCOMPONENTES ---
 
-function FadeIn({ children }: { children: React.ReactNode }) {
-    const [isVisible, setIsVisible] = useState(false);
-    const domRef = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-        const observer = new IntersectionObserver(entries => { entries.forEach(entry => setIsVisible(entry.isIntersecting)); }, { threshold: 0.1 }); 
-        const { current } = domRef;
-        if (current) observer.observe(current);
-        return () => { if (current) observer.unobserve(current); };
-    }, []);
-    return ( <div ref={domRef} className={`fade-in-section ${isVisible ? 'is-visible' : ''}`}>{children}</div> );
-}
-
-function HeroCarousel({ slides }: { slides: any[] }) {
+function HeroCarousel() {
     const [current, setCurrent] = useState(0);
-    const length = slides.length;
-    useEffect(() => {
-        if (!slides || slides.length === 0) return;
-        const timer = setInterval(() => { setCurrent(current === length - 1 ? 0 : current + 1); }, 6000);
-        return () => clearInterval(timer);
-    }, [current, length, slides]);
-    if (!Array.isArray(slides) || slides.length <= 0) return null; 
-    const nextSlide = () => setCurrent(current === length - 1 ? 0 : current + 1);
-    const prevSlide = () => setCurrent(current === 0 ? length - 1 : current - 1);
+    useEffect(() => { const t = setInterval(() => setCurrent(c => (c + 1) % HERO_SLIDES.length), 5000); return () => clearInterval(t); }, []);
     return (
-        <div style={{ position: 'relative', height: '600px', width: '100%', overflow: 'hidden' }}>
-            <style jsx>{` .hero-text { font-size: 3.5rem; } .hero-arrow { top: 50%; transform: translateY(-50%); } .hero-left { left: 20px; } .hero-right { right: 20px; } @media (max-width: 768px) { .hero-text { font-size: 2.2rem; } .hero-arrow { top: auto; bottom: 20px; transform: none; } .hero-left { left: 20px; } .hero-right { right: 20px; } } `}</style>
-            {slides.map((slide, index) => (
-                <div key={index} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundImage: `url("${slide.image || 'https://via.placeholder.com/1920x600'}")`, backgroundSize: 'cover', backgroundPosition: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', opacity: index === current ? 1 : 0, transition: 'opacity 1s ease-in-out', zIndex: index === current ? 1 : 0 }}>
-                    <div style={{position:'absolute', inset:0, background:'linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.7))'}}></div>
-                    <div style={{position:'relative', zIndex:2, textAlign:'center', padding:'20px'}}>
-                        <h1 className="hero-text" style={{fontWeight: '900', textTransform: 'uppercase', margin: '0 0 15px 0', letterSpacing: '-2px', color: 'white', lineHeight:'1'}}>{slide.title}</h1>
-                        <p style={{fontSize: '1.2rem', maxWidth: '600px', margin: '0 auto 40px auto', color: '#f0f0f0', fontWeight:'500'}}>{slide.subtitle}</p>
-                        <a href={slide.link || '#novedades'} style={{background: 'white', color: 'black', padding: '15px 40px', borderRadius: '50px', fontWeight: 'bold', textDecoration: 'none', fontSize: '1rem', transition:'transform 0.2s', display:'inline-block'}}>{slide.buttonText}</a>
-                    </div>
+        <div className="relative h-48 w-full overflow-hidden">
+            {HERO_SLIDES.map((slide, i) => (
+                <div key={i} className="absolute inset-0 flex flex-col justify-center px-6 transition-opacity duration-1000" style={{ opacity: i === current ? 1 : 0, background: slide.bg }}>
+                    <h2 className="text-2xl md:text-4xl font-black text-white italic tracking-tighter uppercase mb-1">{slide.title}</h2>
+                    <p className="text-white/80 text-sm md:text-base font-medium">{slide.subtitle}</p>
                 </div>
             ))}
-            <button onClick={prevSlide} className="hero-arrow hero-left" style={{position:'absolute', background:'rgba(255,255,255,0.2)', border:'none', borderRadius:'50%', padding:'10px', cursor:'pointer', zIndex:10, backdropFilter:'blur(5px)', color:'white'}}><ChevronLeft size={30}/></button>
-            <button onClick={nextSlide} className="hero-arrow hero-right" style={{position:'absolute', background:'rgba(255,255,255,0.2)', border:'none', borderRadius:'50%', padding:'10px', cursor:'pointer', zIndex:10, backdropFilter:'blur(5px)', color:'white'}}><ChevronRight size={30}/></button>
-            <div style={{position:'absolute', bottom:'20px', left:'50%', transform:'translateX(-50%)', display:'flex', gap:'10px', zIndex:10}}>
-                {slides.map((_, idx) => ( <div key={idx} onClick={() => setCurrent(idx)} style={{width: idx === current ? '30px' : '10px', height:'10px', borderRadius:'5px', background: idx === current ? 'white' : 'rgba(255,255,255,0.5)', cursor:'pointer', transition:'all 0.3s'}} /> ))}
-            </div>
-        </div>
-    );
-}
-
-function CategoryCard({ title, img, link }: { title: string, img: string, link: string }) {
-    return (
-        <Link href={link} style={{textDecoration:'none'}}>
-            <div style={{ height: '250px', borderRadius: '20px', overflow: 'hidden', position: 'relative', backgroundImage: `url(${img})`, backgroundSize: 'cover', backgroundPosition: 'center', display: 'flex', alignItems: 'flex-end', padding:'20px', cursor: 'pointer', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', transition:'transform 0.3s' }} className="hover:scale-[1.02]">
-                <div style={{position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.8), transparent)'}}></div>
-                <h3 style={{position:'relative', zIndex:2, color:'white', fontSize:'1.5rem', fontWeight:'800', textTransform:'uppercase', letterSpacing:'-0.5px', margin:0}}>{title}</h3>
-            </div>
-        </Link>
-    )
-}
-
-function ProductCard({ product, globalDiscount, categoryDiscounts }: { product: Product, globalDiscount: number, categoryDiscounts?: Record<string, number> }) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [isHovered, setIsHovered] = useState(false);
-
-  useEffect(() => {
-    const imageFilename = product.images && product.images.length > 0 ? product.images[0] : `${product.id}.jpg`;
-    const cacheKey = `img_cache_${imageFilename}`;
-    const cachedUrl = sessionStorage.getItem(cacheKey);
-    if (cachedUrl) { setImageUrl(cachedUrl); return; }
-    async function fetchImage() {
-      try {
-        let imageRef;
-        if (product.images && product.images.length > 0) imageRef = ref(storage, `products-images/${product.images[0]}`);
-        else imageRef = ref(storage, `products-images/${product.id}.jpg`);
-        const url = await getDownloadURL(imageRef);
-        setImageUrl(url);
-        sessionStorage.setItem(cacheKey, url);
-      } catch (error) { }
-    }
-    fetchImage();
-  }, [product]);
-
-  const categoryDiscount = (product.category && categoryDiscounts && categoryDiscounts[product.category]) || 0;
-  const activeDiscount = categoryDiscount > 0 ? categoryDiscount : globalDiscount;
-  const finalPrice = activeDiscount > 0 ? product.base_price * (1 - activeDiscount / 100) : product.base_price;
-
-  return (
-    <Link href={`/product/${product.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-      <div onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)} style={{ cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', transition: 'transform 0.2s ease' }}>
-          <div style={{ aspectRatio: '3/4', width: '100%', background: '#f4f4f5', borderRadius: '16px', overflow: 'hidden', position: 'relative', marginBottom:'12px' }}>
-              {activeDiscount > 0 && <span style={{ position: 'absolute', top: '10px', left: '10px', background: '#111', color: 'white', fontSize: '0.7rem', padding: '4px 8px', fontWeight: 'bold', zIndex: 2, borderRadius:'6px' }}>-{activeDiscount}%</span>}
-              {imageUrl ? (
-                  <Image src={imageUrl} alt={product.name} fill quality={95} sizes="(max-width: 768px) 50vw, 33vw" style={{ objectFit: 'cover', objectPosition: 'top center', transition: 'transform 0.5s ease', transform: isHovered ? 'scale(1.05)' : 'scale(1)' }} priority={false} />
-              ) : <div style={{width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize: '2rem', opacity: 0.2}}>👕</div>}
-          </div>
-          <div>
-              <div style={{display:'flex', flexDirection:'column', gap:'2px'}}>
-                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '600', color: '#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{product.name}</h3>
-                  <p style={{fontSize:'0.8rem', color:'#666', margin:0}}>{product.category || 'Camiseta'}</p>
-                  <div style={{marginTop:'5px', display:'flex', alignItems:'center', gap:'8px'}}>
-                      {activeDiscount > 0 ? (
-                          <>
-                            <span style={{ color: '#d32f2f', fontWeight: 'bold', fontSize: '0.95rem' }}>{finalPrice.toFixed(2)}€</span>
-                            <span style={{ textDecoration: 'line-through', color: '#999', fontSize: '0.8rem' }}>{product.base_price.toFixed(2)}€</span>
-                          </>
-                      ) : ( <span style={{ color: '#111', fontWeight: 'bold', fontSize: '0.95rem' }}>{product.base_price.toFixed(2)}€</span> )}
-                  </div>
-              </div>
-          </div>
-      </div>
-    </Link>
-  );
-}
-
-function PromoSection() {
-    return (
-        <div style={{display:'flex', gap:'10px', margin:'40px 0'}}>
-            <div style={{flex:1, background:'#f4f4f5', padding:'20px', borderRadius:'16px', textAlign:'center'}}>
-                <span style={{fontSize:'2rem'}}>🚚</span>
-                <h4 style={{margin:'10px 0 5px 0'}}>Envío Gratis</h4>
-                <p style={{fontSize:'0.8rem', color:'#666', margin:0}}>En pedidos +50€</p>
-            </div>
-            <div style={{flex:1, background:'#f4f4f5', padding:'20px', borderRadius:'16px', textAlign:'center'}}>
-                <span style={{fontSize:'2rem'}}>🔄</span>
-                <h4 style={{margin:'10px 0 5px 0'}}>Devoluciones</h4>
-                <p style={{fontSize:'0.8rem', color:'#666', margin:0}}>30 días de garantía</p>
+            <div className="absolute bottom-3 right-4 flex gap-1">
+                {HERO_SLIDES.map((_, i) => (<div key={i} className={`h-1.5 rounded-full transition-all ${i===current?'w-6 bg-white':'w-2 bg-white/30'}`} />))}
             </div>
         </div>
     )
 }
 
-function ReviewsCarousel({ reviews }: { reviews: Review[] }) {
-    const [currentIndex, setCurrentIndex] = useState(0);
-    const safeReviews = reviews.length > 0 ? reviews : [];
-    useEffect(() => {
-        if (safeReviews.length <= 1) return;
-        const interval = setInterval(() => { setCurrentIndex((p) => (p + 1) % safeReviews.length); }, 8000); 
-        return () => clearInterval(interval);
-    }, [safeReviews.length]);
-    if (safeReviews.length === 0) return <div style={{color:'#666'}}>Sé el primero en opinar.</div>;
-    const next = () => setCurrentIndex((p) => (p + 1) % safeReviews.length);
-    const prev = () => setCurrentIndex((p) => (p - 1 + safeReviews.length) % safeReviews.length);
-    const currentReview = safeReviews[currentIndex];
+function MatchCard({ m, onFinish, isFinal, label }: { m?: Match, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean, label?: string }) {
+    const [s1, setS1] = useState(""); const [s2, setS2] = useState("");
+    if (!m) return <div className="bg-gray-100 h-32 rounded-2xl animate-pulse"></div>;
+    const isWaiting = m.p1 === "Esperando..." || m.p2 === "Esperando...";
+    if (m.isBye) return <div className="bg-gray-50 border border-gray-100 p-4 rounded-2xl flex flex-col items-center justify-center opacity-50"><span className="text-green-600 font-bold text-xs uppercase">Pase Directo</span><p className="font-black text-sm">{m.winner}</p></div>;
+
     return (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px', minHeight: '250px' }}>
-            <button onClick={prev} style={{ background: 'white', border: '1px solid #eee', color: '#111', padding: '10px', borderRadius: '50%', cursor: 'pointer', boxShadow:'0 4px 10px rgba(0,0,0,0.05)' }}><ChevronLeft size={20}/></button>
-            <div style={{ flex: 1, background: 'white', padding: '30px', borderRadius: '20px', border: '1px solid #eee', maxWidth: '600px', animation: 'fadeIn 0.5s', boxShadow: '0 10px 30px rgba(0,0,0,0.03)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                    <div style={{textAlign: 'left'}}>
-                        <h4 style={{ margin: 0, fontSize: '1rem', color: '#111', fontWeight:'bold' }}>{currentReview.userName}</h4>
-                        <span style={{ fontSize: '0.75rem', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '4px', marginTop:'2px', fontWeight:'bold' }}><CheckCircle size={12}/> Verificado</span>
-                    </div>
-                    <div style={{ display: 'flex' }}>{[...Array(5)].map((_, i) => <Star key={i} size={16} fill={i < currentReview.rating ? "#111" : "none"} color={i < currentReview.rating ? "#111" : "#ddd"} />)}</div>
+        <div className={`relative bg-white border ${m.winner ? 'border-gray-200 opacity-70' : 'border-gray-200 shadow-lg'} p-4 rounded-2xl overflow-hidden`}>
+            {label && <div className="absolute top-0 right-0 bg-black text-white text-[9px] font-bold px-2 py-1 rounded-bl-lg uppercase">{label}</div>}
+            
+            {/* EQUIPO 1 */}
+            <div className="flex justify-between items-center mb-3 pt-2">
+                <div className="overflow-hidden">
+                    <p className={`font-black text-sm truncate ${m.winner===m.p1 ? 'text-green-600' : ''}`}>{m.p1}</p>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase truncate">{m.p1Club || 'Club'}</p>
                 </div>
-                <p style={{ fontSize: '1rem', fontStyle: 'italic', color: '#444', marginBottom: '15px', lineHeight:'1.5' }}>"{currentReview.comment}"</p>
-                {currentReview.photos && currentReview.photos.length > 0 && (
-                    <div style={{display:'flex', gap:'8px', marginBottom:'15px', overflowX:'auto'}}>
-                        {currentReview.photos.map((pic, idx) => ( <img key={idx} src={pic} alt="Review pic" style={{width:'60px', height:'60px', objectFit:'cover', borderRadius:'8px', border:'1px solid #eee', cursor:'pointer'}} onClick={() => window.open(pic, '_blank')} /> ))}
-                    </div>
-                )}
-                {currentReview.purchasedItems && currentReview.purchasedItems.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>{currentReview.purchasedItems.map((item, i) => <span key={i} style={{ background: '#f4f4f5', padding: '4px 10px', borderRadius: '15px', fontSize: '0.7rem', color: '#666', fontWeight:'600' }}>{item}</span>)}</div>}
+                {m.winner ? <span className="font-mono font-black text-xl">{m.score1}</span> : <input type="number" className="w-10 h-10 bg-gray-50 text-center rounded-lg font-bold outline-none focus:ring-2 ring-black transition" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting} />}
             </div>
-            <button onClick={next} style={{ background: 'white', border: '1px solid #eee', color: '#111', padding: '10px', borderRadius: '50%', cursor: 'pointer', boxShadow:'0 4px 10px rgba(0,0,0,0.05)' }}><ChevronRight size={20}/></button>
-        </div>
-    );
-}
 
-function ReviewModal({ onClose }: { onClose: () => void }) {
-    const [step, setStep] = useState(1);
-    const [orderId, setOrderId] = useState('');
-    const [verifying, setVerifying] = useState(false);
-    const [error, setError] = useState('');
-    const [purchasedItems, setPurchasedItems] = useState<string[]>([]);
-    const [userName, setUserName] = useState('');
-    const [rating, setRating] = useState(5);
-    const [comment, setComment] = useState('');
-    const [submitting, setSubmitting] = useState(false);
-    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-    const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+            <div className="w-full h-px bg-gray-100 mb-3"></div>
 
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            const files = Array.from(e.target.files).slice(0, 3);
-            setSelectedFiles(files);
-            const urls = files.map(file => URL.createObjectURL(file));
-            setPreviewUrls(urls);
-        }
-    };
-
-    const handleVerify = async (e: React.FormEvent) => {
-        e.preventDefault(); setVerifying(true); setError('');
-        try {
-            const { getDoc, doc } = await import('firebase/firestore');
-            const orderRef = doc(db, 'orders', orderId.trim());
-            const orderSnap = await getDoc(orderRef);
-            if (orderSnap.exists()) {
-                const data = orderSnap.data();
-                setPurchasedItems(data.items?.map((i:any) => i.productName) || []);
-                setUserName(data.customer?.name || '');
-                setStep(2);
-            } else { setError('Pedido no encontrado.'); }
-        } catch (err) { setError('Error verificando.'); }
-        setVerifying(false);
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault(); setSubmitting(true);
-        try {
-            let photoUrls: string[] = [];
-            if (selectedFiles.length > 0) {
-                for (const file of selectedFiles) {
-                    const storageRef = ref(storage, `review-images/${Date.now()}-${file.name}`);
-                    await uploadBytes(storageRef, file);
-                    const url = await getDownloadURL(storageRef);
-                    photoUrls.push(url);
-                }
-            }
-            await addDoc(collection(db, 'reviews'), { orderId: orderId.trim(), userName, rating, comment, purchasedItems, photos: photoUrls, createdAt: new Date() });
-            alert('¡Gracias por tu opinión!'); onClose(); window.location.reload();
-        } catch (err) { setError('Error al guardar.'); console.error(err) }
-        setSubmitting(false);
-    };
-
-    return (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', backdropFilter:'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
-            <div style={{ background: 'white', padding: '30px', borderRadius: '24px', width: '90%', maxWidth: '500px', border: 'none', position: 'relative', boxShadow: '0 20px 60px rgba(0,0,0,0.1)', maxHeight:'90vh', overflowY:'auto' }}>
-                <button onClick={onClose} style={{ position: 'absolute', top: '20px', right: '20px', background: 'transparent', border: 'none', color: '#111', cursor: 'pointer' }}><X /></button>
-                <h2 style={{ marginTop: 0, color: '#111', fontSize:'1.5rem', fontWeight:'800' }}>{step === 1 ? 'Verifica tu compra' : 'Tu opinión cuenta'}</h2>
-                {step === 1 ? ( <form onSubmit={handleVerify}><p style={{ color: '#666', marginBottom: '25px', lineHeight:'1.5', fontSize:'0.95rem' }}>Para asegurar la autenticidad, introduce tu ID de pedido.</p><input placeholder="ID Pedido (Ej: 7A3B...)" value={orderId} onChange={e => setOrderId(e.target.value)} style={{ width: '100%', padding: '12px', background: '#f9f9f9', border: '1px solid #eee', color: '#111', borderRadius: '12px', marginBottom: '15px', fontSize:'1rem', outline:'none' }} />{error && <p style={{color:'#d32f2f', fontSize:'0.85rem', marginBottom:'10px'}}>{error}</p>}<button type="submit" disabled={verifying} style={{ width: '100%', padding: '14px', background: '#111', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize:'1rem' }}>{verifying ? 'Verificando...' : 'Verificar'}</button></form> ) : ( <form onSubmit={handleSubmit}><input placeholder="Nombre público" value={userName} onChange={e => setUserName(e.target.value)} style={{ width: '100%', padding: '12px', background: '#f9f9f9', border: '1px solid #eee', color: '#111', borderRadius: '12px', marginBottom: '15px', outline:'none' }} /><div style={{ marginBottom: '20px', display: 'flex', gap: '5px' }}>{[1, 2, 3, 4, 5].map(star => (<button key={star} type="button" onClick={() => setRating(star)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}><Star size={28} fill={star <= rating ? "#111" : "none"} color={star <= rating ? "#111" : "#ddd"} /></button>))}</div><textarea placeholder="¿Qué es lo que más te ha gustado?" value={comment} onChange={e => setComment(e.target.value)} style={{ width: '100%', padding: '12px', minHeight: '100px', background: '#f9f9f9', border: '1px solid #eee', color: '#111', borderRadius: '12px', marginBottom: '20px', fontSize:'1rem', fontFamily:'inherit', outline:'none', resize:'none' }} /><div style={{marginBottom:'20px'}}><label style={{display:'block', marginBottom:'10px', fontWeight:'600', fontSize:'0.9rem', color:'#444'}}>Añade fotos (Max 3):</label><div style={{display:'flex', gap:'10px', alignItems:'center'}}><label style={{cursor:'pointer', display:'flex', alignItems:'center', gap:'5px', padding:'10px 15px', border:'1px dashed #ccc', borderRadius:'10px', color:'#666'}}><Camera size={20} /><span style={{fontSize:'0.9rem'}}>Subir</span><input type="file" multiple accept="image/*" onChange={handleFileSelect} style={{display:'none'}} /></label><span style={{fontSize:'0.8rem', color:'#999'}}>{selectedFiles.length} seleccionadas</span></div>{previewUrls.length > 0 && (<div style={{display:'flex', gap:'10px', marginTop:'15px'}}>{previewUrls.map((url, i) => (<div key={i} style={{width:'50px', height:'50px', borderRadius:'8px', overflow:'hidden', border:'1px solid #eee'}}><img src={url} alt="preview" style={{width:'100%', height:'100%', objectFit:'cover'}} /></div>))}</div>)}</div><button type="submit" disabled={submitting} style={{ width: '100%', padding: '14px', background: '#111', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize:'1rem' }}>{submitting ? 'Publicando...' : 'Publicar Reseña'}</button></form> )}
+            {/* EQUIPO 2 */}
+            <div className="flex justify-between items-center mb-4">
+                <div className="overflow-hidden">
+                    <p className={`font-black text-sm truncate ${m.winner===m.p2 ? 'text-green-600' : ''}`}>{m.p2}</p>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase truncate">{m.p2Club || 'Club'}</p>
+                </div>
+                {m.winner ? <span className="font-mono font-black text-xl">{m.score2}</span> : <input type="number" className="w-10 h-10 bg-gray-50 text-center rounded-lg font-bold outline-none focus:ring-2 ring-black transition" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} />}
             </div>
+
+            {!m.winner && !isWaiting && (
+                <button onClick={()=>s1&&s2&&onFinish(m.id, +s1, +s2)} className="w-full bg-black text-white text-xs font-bold py-2 rounded-lg hover:bg-gray-800 transition">FINALIZAR</button>
+            )}
         </div>
     );
 }
