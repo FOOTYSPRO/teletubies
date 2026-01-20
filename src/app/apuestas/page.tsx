@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/lib/context';
 import { db } from '@/lib/firebase';
 import { doc, addDoc, collection, setDoc, increment, serverTimestamp } from 'firebase/firestore';
-import { Lock, Wallet, Coins, Crown, TrendingDown, History, Flame, CheckCircle2, XCircle } from 'lucide-react';
+import { Lock, Wallet, Coins, Crown, TrendingDown, History, Flame, CheckCircle2, XCircle, Globe, User } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ApuestasPage() {
@@ -11,15 +11,16 @@ export default function ApuestasPage() {
   const [betAmount, setBetAmount] = useState(100);
   const [selectedMatchId, setSelectedMatchId] = useState<number | null>(null);
   const [betTarget, setBetTarget] = useState("");
-  const [activeTab, setActiveTab] = useState<'active' | 'history'>('active'); // Nuevo estado para pestañas
+  const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
 
   // --- ESTADÍSTICAS ---
   const richest = useMemo(() => users.length ? [...users].sort((a,b) => b.balance - a.balance)[0] : null, [users]);
   const poorest = useMemo(() => users.length ? [...users].sort((a,b) => a.balance - b.balance)[0] : null, [users]);
 
-  // Filtrar apuestas
-  const myPendingBets = activeBets.filter((b:any) => b.status === 'pending');
-  const myHistoryBets = activeBets.filter((b:any) => b.status !== 'pending' && b.bettor === user?.id).sort((a:any, b:any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+  // FILTROS
+  const pendingBets = activeBets.filter((b:any) => b.status === 'pending');
+  // HISTORIAL GLOBAL (Ya no filtro por user.id)
+  const globalHistory = activeBets.filter((b:any) => b.status !== 'pending').sort((a:any, b:any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
 
   // --- FUNCIONES ---
   const realizarApuesta = async () => {
@@ -38,7 +39,7 @@ export default function ApuestasPage() {
             timestamp: serverTimestamp() 
         });
         alert(`✅ ¡Apuesta de ${betAmount}€ realizada!`);
-        setActiveTab('active'); // Volver a la pestaña activa
+        setActiveTab('active');
       } catch (e) { alert("Error al apostar"); }
   };
 
@@ -81,7 +82,7 @@ export default function ApuestasPage() {
               </div>
           </div>
 
-          {/* 💰 ZONA DE APUESTAS (FORMULARIO) */}
+          {/* 💰 ZONA DE APUESTAS */}
           <div className="bg-white border-2 border-black p-6 rounded-3xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden">
               <div className="flex justify-between items-center mb-6">
                   <h2 className="text-xl font-black text-black uppercase italic flex items-center gap-2"><Coins className="text-yellow-500"/> Nueva Apuesta</h2>
@@ -93,7 +94,6 @@ export default function ApuestasPage() {
               
               {matches.length > 0 ? (
                   <div className="space-y-5">
-                      {/* SELECTOR PARTIDO */}
                       <div>
                           <select className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200 text-black text-xs font-bold outline-none focus:border-black transition cursor-pointer appearance-none uppercase tracking-wide" onChange={e=>{const m=matches.find((x:any)=>x.id===parseInt(e.target.value));setSelectedMatchId(parseInt(e.target.value));setBetTarget("");}}>
                               <option value="">👇 Seleccionar Partido</option>
@@ -101,7 +101,6 @@ export default function ApuestasPage() {
                           </select>
                       </div>
 
-                      {/* SELECTOR GANADOR */}
                       {selectedMatchId !== null && (
                           <div className="animate-in fade-in slide-in-from-top-2 grid grid-cols-2 gap-3">
                               <button onClick={()=>setBetTarget(matches[selectedMatchId!].p1)} className={`p-3 rounded-xl border-2 text-xs font-black transition uppercase ${betTarget===matches[selectedMatchId!].p1?'bg-black text-white border-black':'bg-white text-gray-500 border-gray-200'}`}>{matches[selectedMatchId!].p1}</button>
@@ -109,7 +108,6 @@ export default function ApuestasPage() {
                           </div>
                       )}
 
-                      {/* CANTIDAD */}
                       <div>
                           <div className="flex items-center gap-3 bg-white p-3 rounded-xl border-2 border-gray-200 mb-3 focus-within:border-black transition">
                               <span className="text-xl">💵</span>
@@ -141,20 +139,19 @@ export default function ApuestasPage() {
           {/* --- PESTAÑAS --- */}
           <div className="flex bg-gray-200 p-1 rounded-2xl">
               <button onClick={() => setActiveTab('active')} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition ${activeTab === 'active' ? 'bg-white shadow text-black' : 'text-gray-500 hover:text-gray-700'}`}>
-                  <Flame size={14} className={activeTab === 'active' ? 'text-orange-500' : ''}/> En Juego
+                  <Flame size={14} className={activeTab === 'active' ? 'text-orange-500' : ''}/> En Juego ({pendingBets.length})
               </button>
               <button onClick={() => setActiveTab('history')} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition ${activeTab === 'history' ? 'bg-white shadow text-black' : 'text-gray-500 hover:text-gray-700'}`}>
-                  <History size={14} className={activeTab === 'history' ? 'text-blue-500' : ''}/> Tu Historial
+                  <Globe size={14} className={activeTab === 'history' ? 'text-blue-500' : ''}/> Historial Global
               </button>
           </div>
 
-          {/* --- CONTENIDO DE LAS PESTAÑAS --- */}
+          {/* --- CONTENIDO --- */}
           <div>
               {activeTab === 'active' ? (
                   /* VISTA: EN JUEGO */
                   <div className="space-y-3">
-                      <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2">Apuestas Globales Pendientes</h3>
-                      {myPendingBets.length > 0 ? myPendingBets.map((b:any) => (
+                      {pendingBets.length > 0 ? pendingBets.map((b:any) => (
                           <div key={b.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center">
                               <div className="flex items-center gap-3">
                                   <div className="bg-orange-100 p-2 rounded-full text-orange-600"><Flame size={16}/></div>
@@ -165,42 +162,40 @@ export default function ApuestasPage() {
                               </div>
                               <span className="font-mono font-black text-sm">{b.amount} €</span>
                           </div>
-                      )) : ( <div className="text-center py-8 text-gray-300 text-xs italic">Nada por aquí...</div> )}
+                      )) : ( <div className="text-center py-8 text-gray-300 text-xs italic">No hay apuestas activas.</div> )}
                   </div>
               ) : (
-                  /* VISTA: HISTORIAL */
+                  /* VISTA: HISTORIAL GLOBAL */
                   <div className="space-y-3">
-                      <div className="flex justify-between items-center px-2">
-                          <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tus Resultados</h3>
-                          <span className="text-[10px] font-bold bg-gray-100 px-2 py-1 rounded text-gray-500">{myHistoryBets.length} apuestas</span>
-                      </div>
-
-                      {myHistoryBets.length > 0 ? myHistoryBets.map((b:any) => (
-                          <div key={b.id} className={`p-4 rounded-2xl border flex justify-between items-center transition hover:scale-[1.01] ${b.status === 'won' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      {globalHistory.length > 0 ? globalHistory.map((b:any) => (
+                          <div key={b.id} className={`p-4 rounded-2xl border flex justify-between items-center transition ${b.status === 'won' ? 'bg-green-50/50 border-green-200' : 'bg-red-50/50 border-red-200'}`}>
                               <div className="flex items-center gap-3">
-                                  {b.status === 'won' ? (
-                                      <div className="bg-green-100 p-2 rounded-full text-green-600"><CheckCircle2 size={16}/></div>
-                                  ) : (
-                                      <div className="bg-red-100 p-2 rounded-full text-red-600"><XCircle size={16}/></div>
-                                  )}
+                                  {/* ICONO */}
+                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-[10px] text-white uppercase ${b.status==='won'?'bg-green-500':'bg-red-500'}`}>
+                                      {b.bettor.substring(0,2)}
+                                  </div>
+                                  {/* INFO */}
                                   <div>
-                                      <p className={`font-black text-xs uppercase ${b.status === 'won' ? 'text-green-800' : 'text-red-800'}`}>
-                                          {b.status === 'won' ? 'VICTORIA' : 'DERROTA'}
-                                      </p>
-                                      <p className="text-[10px] text-gray-500 font-bold">Tu equipo: {b.chosenWinner}</p>
+                                      <div className="flex items-center gap-2">
+                                          <p className="font-black text-xs uppercase text-black">{b.bettor}</p>
+                                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${b.status==='won'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>
+                                              {b.status === 'won' ? 'WIN' : 'LOSS'}
+                                          </span>
+                                      </div>
+                                      <p className="text-[10px] text-gray-500 font-bold">Iba con {b.chosenWinner}</p>
                                   </div>
                               </div>
+                              {/* DINERO */}
                               <div className="text-right">
-                                  <span className={`font-mono font-black text-lg block ${b.status === 'won' ? 'text-green-600' : 'text-red-500'}`}>
+                                  <span className={`font-mono font-black text-sm block ${b.status === 'won' ? 'text-green-600' : 'text-red-500'}`}>
                                       {b.status === 'won' ? '+' : '-'}{b.amount} €
                                   </span>
-                                  {b.status === 'won' && <span className="text-[9px] text-green-600 font-bold uppercase">+100% Profit</span>}
                               </div>
                           </div>
                       )) : (
                           <div className="text-center py-10 bg-white rounded-3xl border border-gray-100">
-                              <History size={32} className="mx-auto text-gray-200 mb-2"/>
-                              <p className="text-gray-400 text-xs font-bold">Aún no has finalizado ninguna apuesta.</p>
+                              <Globe size={32} className="mx-auto text-gray-200 mb-2"/>
+                              <p className="text-gray-400 text-xs font-bold">Aún no hay salseo histórico.</p>
                           </div>
                       )}
                   </div>
