@@ -4,7 +4,7 @@
 
 :root {
   --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 245, 247, 250; /* Un gris muuuuy clarito de fondo para dar profundidad */
+  --background-start-rgb: 245, 247, 250;
   --background-end-rgb: 255, 255, 255;
 }
 
@@ -18,16 +18,16 @@ body {
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Animaciones de entrada */
+/* Animaciones */
 .fade-in { animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(20px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
-/* --- NUEVO: BORDE ANIMADO PREMIUM --- */
+/* BORDE ANIMADO (Clave para el diseño nuevo) */
 @layer utilities {
   .animated-border {
     position: relative;
     border: double 3px transparent;
-    border-radius: 1.5rem; /* rounded-3xl */
+    border-radius: 1.5rem;
     background-image: linear-gradient(white, white), linear-gradient(to right, #3b82f6, #8b5cf6, #ec4899);
     background-origin: border-box;
     background-clip: padding-box, border-box;
