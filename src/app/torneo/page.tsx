@@ -5,7 +5,7 @@ import { useApp } from '@/lib/context';
 import { db } from '@/lib/firebase';
 import { doc, setDoc, writeBatch, increment, addDoc, collection, serverTimestamp, query, getDocs } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
-import { Settings, Trash2, Users, Shuffle, Bot } from 'lucide-react';
+import { Settings, Trash2, Users, Shuffle, Bot, UserPlus } from 'lucide-react';
 
 const TEAMS_REAL = ["Man. City 🔵", "Real Madrid 👑", "Bayern 🔴", "Liverpool 🔴", "Arsenal 🔴", "Inter ⚫🔵", "PSG 🗼", "Barça 🔵🔴", "Atleti 🔴⚪", "Leverkusen ⚫🔴", "Milan ⚫🔴", "Juve ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Spurs ⚪", "Villa 🦁", "Newcastle ⚫⚪"];
 const BYE_NAME = "Pase Directo ➡️";
@@ -29,42 +29,85 @@ export default function TorneoPage() {
       setSelectedPlayers([...selectedPlayers, cpuName]);
   };
 
+  // --- LÓGICA DE EMPAREJAMIENTO 2vs2 ---
+  const createTeams = (individualPlayers: string[]) => {
+      // Barajar jugadores
+      const shuffled = [...individualPlayers].sort(() => Math.random() - 0.5);
+      const teams: string[] = [];
+      
+      // Crear parejas "Jugador 1 & Jugador 2"
+      for (let i = 0; i < shuffled.length; i += 2) {
+          if (shuffled[i+1]) {
+              teams.push(`${shuffled[i]} & ${shuffled[i+1]}`);
+          } else {
+              // Si sobra uno (no debería si validamos antes), lo dejamos solo o con CPU
+              teams.push(`${shuffled[i]} & CPU Relleno`);
+          }
+      }
+      return teams;
+  };
+
   // --- GENERAR BRACKET ---
   const handleCrearTorneo = async () => {
-      if (selectedPlayers.length < 2) return alert("Mínimo 2 jugadores.");
-      
-      let players = [...selectedPlayers];
-      // Forzamos siempre a 4 u 8 para que el cuadro sea simétrico
-      let targetSize = players.length <= 4 ? 4 : 8; 
-      
-      // Rellenamos con PASE DIRECTO si no llegamos al número exacto
-      while (players.length < targetSize) players.push(BYE_NAME);
+      // VALIDACIONES
+      if (gameMode === '1vs1') {
+          if (selectedPlayers.length < 2) return alert("Mínimo 2 jugadores.");
+      } else {
+          // Lógica 2vs2
+          if (selectedPlayers.length < 4) return alert("Para 2vs2 necesitáis al menos 4 jugadores (2 equipos).");
+          if (selectedPlayers.length % 2 !== 0) return alert("Para 2vs2 el número de jugadores debe ser PAR. Añade una CPU o a otro amigo.");
+      }
 
-      const shuffledP = [...players].sort(() => Math.random() - 0.5);
+      // PREPARAR PARTICIPANTES (INDIVIDUALES O EQUIPOS)
+      let participants = [];
+      if (gameMode === '2vs2') {
+          participants = createTeams(selectedPlayers);
+      } else {
+          participants = [...selectedPlayers];
+      }
+
+      // AJUSTAR TAMAÑO CUADRO (4 u 8 EQUIPOS/JUGADORES)
+      let targetSize = participants.length <= 4 ? 4 : 8; 
+      while (participants.length < targetSize) participants.push(BYE_NAME);
+
+      const shuffledP = [...participants].sort(() => Math.random() - 0.5);
       const shuffledT = [...TEAMS_REAL].sort(() => Math.random() - 0.5);
 
       const getMatchData = (idx: number) => {
-          const name = shuffledP[idx];
-          const isBye = name === BYE_NAME;
-          const isCpu = name.startsWith("CPU");
+          const entityName = shuffledP[idx]; // Puede ser "Jorge" o "Jorge & Pepe"
+          const isBye = entityName === BYE_NAME;
           
-          // Buscar datos si es usuario real
-          const u = users.find((user: any) => user.id === name);
-          
-          let clubName = "Invitado";
-          if (isCpu) clubName = "IA Legendaria 🤖";
-          else if (u) clubName = u.clubName;
+          let displayClub = "Invitado";
+
+          if (!isBye) {
+              if (entityName.includes(" & ")) {
+                  // ES UN EQUIPO 2vs2: Buscamos los clubes de ambos
+                  const [n1, n2] = entityName.split(" & ");
+                  const u1 = users.find((u:any) => u.id === n1);
+                  const u2 = users.find((u:any) => u.id === n2);
+                  
+                  const c1 = u1 ? u1.clubName : (n1.includes("CPU") ? "Bot" : "Invitado");
+                  const c2 = u2 ? u2.clubName : (n2.includes("CPU") ? "Bot" : "Invitado");
+                  
+                  displayClub = `${c1} / ${c2}`; // Ej: "Aston Birra / Rayo"
+              } else {
+                  // ES 1vs1
+                  const u = users.find((user: any) => user.id === entityName);
+                  if (entityName.startsWith("CPU")) displayClub = "IA Legendaria 🤖";
+                  else if (u) displayClub = u.clubName;
+              }
+          }
 
           return { 
-              name: name, 
+              name: entityName, 
               team: isBye ? null : shuffledT[idx], 
-              club: isBye ? null : clubName
+              club: isBye ? null : displayClub
           };
       };
 
       let newMatches: any[] = [];
       
-      // Lógica de generación de cuadro (4 u 8)
+      // GENERAR ESTRUCTURA
       if (targetSize === 4) {
           newMatches = [
               { id: 0, p1: getMatchData(0).name, p1Team: getMatchData(0).team, p1Club: getMatchData(0).club, p2: getMatchData(1).name, p2Team: getMatchData(1).team, p2Club: getMatchData(1).club, round: 'S' },
@@ -83,10 +126,9 @@ export default function TorneoPage() {
           ];
       }
 
-      // Propagar Pases Directos (BYE)
+      // Propagar BYEs
       newMatches.forEach(m => { if(m.p2===BYE_NAME){m.winner=m.p1;m.isBye=true} else if(m.p1===BYE_NAME){m.winner=m.p2;m.isBye=true} });
       
-      // Función para mover ganadores
       const propagate = (tIdx: number, slot: 'p1'|'p2', s: any) => {
         const wKey = s.winner===s.p1?'p1':'p2';
         newMatches[tIdx][slot] = s.winner!;
@@ -94,34 +136,26 @@ export default function TorneoPage() {
         newMatches[tIdx][slot==='p1'?'p1Club':'p2Club'] = s[wKey==='p1'?'p1Club':'p2Club'] || null;
       };
 
-      if(targetSize===4) { 
-          if(newMatches[0].winner) propagate(2,'p1',newMatches[0]); 
-          if(newMatches[1].winner) propagate(2,'p2',newMatches[1]); 
-      } else { 
-          if(newMatches[0].winner) propagate(4,'p1',newMatches[0]); 
-          if(newMatches[1].winner) propagate(4,'p2',newMatches[1]); 
-          if(newMatches[2].winner) propagate(5,'p1',newMatches[2]); 
-          if(newMatches[3].winner) propagate(5,'p2',newMatches[3]); 
-      }
+      if(targetSize===4) { if(newMatches[0].winner) propagate(2,'p1',newMatches[0]); if(newMatches[1].winner) propagate(2,'p2',newMatches[1]); }
+      else { if(newMatches[0].winner) propagate(4,'p1',newMatches[0]); if(newMatches[1].winner) propagate(4,'p2',newMatches[1]); if(newMatches[2].winner) propagate(5,'p1',newMatches[2]); if(newMatches[3].winner) propagate(5,'p2',newMatches[3]); }
 
-      // Guardar en Firebase
       const clean = newMatches.map(m => JSON.parse(JSON.stringify(m, (k, v) => v === undefined ? null : v)));
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: clean }, { merge: true });
   };
 
-  // --- LÓGICA DE PARTIDO (Igual que antes) ---
   const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
-    if (s1 === s2) return alert("❌ Empate prohibido.");
+    if (s1 === s2) return alert("❌ En eliminatorias no hay empate.");
     const m = matches.find((x: any) => x.id === matchId);
     if (!m) return;
     const isP1 = s1 > s2;
     const winner = isP1 ? m.p1 : m.p2;
     
-    // Si el ganador es una CPU, no hacemos apuestas ni ranking
-    const winnerIsCpu = winner.startsWith("CPU");
+    // Detectar si es un equipo (contiene "&")
+    const isTeam = winner.includes(" & ");
+    const winnerIsCpu = winner.includes("CPU");
 
     try {
-      // 1. Apuestas (Solo si es usuario real vs usuario real o si apostaste al ganador)
+      // 1. Apuestas
       const pending = activeBets.filter((b: any) => b.matchId === matchId && b.status === 'pending');
       const batch = writeBatch(db);
       pending.forEach((b: any) => {
@@ -133,12 +167,20 @@ export default function TorneoPage() {
       });
       await batch.commit();
 
-      // 2. Ranking (Solo usuarios reales puntúan)
-      if (!winnerIsCpu && gameMode === '1vs1' && !m.isBye && winner !== "Esperando...") { 
-          await setDoc(doc(db, "ranking", winner), { puntos: increment(3), victorias: increment(1) }, { merge: true }); 
+      // 2. Ranking
+      // Si es 2vs2 (Team), buscamos a los dos jugadores y les damos puntos a ambos
+      if (!winnerIsCpu && !m.isBye && winner !== "Esperando...") { 
+          if (isTeam) {
+              const [p1, p2] = winner.split(" & ");
+              if (!p1.includes("CPU")) await setDoc(doc(db, "ranking", p1), { puntos: increment(3), victorias: increment(1) }, { merge: true });
+              if (!p2.includes("CPU")) await setDoc(doc(db, "ranking", p2), { puntos: increment(3), victorias: increment(1) }, { merge: true });
+          } else {
+              // 1vs1
+              await setDoc(doc(db, "ranking", winner), { puntos: increment(3), victorias: increment(1) }, { merge: true }); 
+          }
       }
       
-      // 3. Avanzar Ronda
+      // 3. Avanzar
       let next = [...matches];
       next = next.map((x: any) => x.id === matchId ? { ...x, score1: s1, score2: s2, winner: winner } : x);
 
@@ -194,7 +236,9 @@ export default function TorneoPage() {
             <div className="bg-white p-8 md:p-12 rounded-3xl border border-gray-200 shadow-xl text-center max-w-3xl mx-auto mt-10">
                 <div className="inline-block p-4 bg-blue-50 rounded-full mb-6"><Settings size={48} className="text-blue-600"/></div>
                 <h2 className="text-4xl font-black mb-2 text-black tracking-tight">PREPARAR TORNEO</h2>
-                <p className="text-gray-400 text-sm font-bold uppercase tracking-widest mb-6">Selecciona {8 - selectedPlayers.length} jugadores más para cuadro completo</p>
+                <p className="text-gray-400 text-sm font-bold uppercase tracking-widest mb-6">
+                    {gameMode === '2vs2' ? 'Selecciona jugadores PARES para formar equipos' : 'Selecciona los participantes'}
+                </p>
                 
                 <div className="flex justify-center gap-4 mb-8">
                     <button onClick={()=>setGameMode('1vs1')} className={`px-6 py-2 rounded-full font-black text-sm uppercase tracking-wider transition ${gameMode==='1vs1'?'bg-black text-white':'bg-gray-100 text-gray-400'}`}>1 vs 1</button>
@@ -203,7 +247,7 @@ export default function TorneoPage() {
 
                 {/* BOTÓN MÁGICO: AÑADIR CPU */}
                 <button onClick={addCpu} className="mb-6 flex items-center gap-2 mx-auto bg-purple-100 text-purple-700 px-6 py-3 rounded-xl font-bold text-xs uppercase hover:bg-purple-200 transition">
-                    <Bot size={18}/> Añadir CPU / Relleno
+                    <Bot size={18}/> {gameMode === '2vs2' ? 'Añadir CPU (Relleno)' : 'Añadir CPU'}
                 </button>
 
                 {/* LISTA DE JUGADORES */}
@@ -226,7 +270,7 @@ export default function TorneoPage() {
                 ) : ( <div className="mb-10 p-6 bg-gray-50 rounded-xl border border-gray-100 text-gray-400 text-sm flex flex-col items-center gap-2"><Users size={32} className="opacity-50"/><p>No hay jugadores registrados.</p></div> )}
                 
                 <button onClick={handleCrearTorneo} disabled={selectedPlayers.length < 2} className="w-full md:w-auto px-12 bg-black text-white font-black py-4 rounded-2xl shadow-xl hover:bg-gray-900 transition transform hover:scale-[1.02] active:scale-95 text-sm uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">
-                    🚀 COMENZAR TORNEO ({selectedPlayers.length})
+                    🚀 COMENZAR {gameMode} ({selectedPlayers.length})
                 </button>
             </div>
         ) : (
@@ -248,7 +292,7 @@ export default function TorneoPage() {
   );
 }
 
-// ... MatchCard component sigue igual ...
+// ... MatchCard component (sin cambios) ...
 function MatchCard({ m, onFinish, isFinal, label }: { m?: any, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean, label?: string }) {
     const [s1, setS1] = useState(""); const [s2, setS2] = useState("");
     if (!m) return <div className="bg-gray-100 h-32 rounded-2xl animate-pulse"></div>;
