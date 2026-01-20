@@ -1,7 +1,6 @@
-// src/app/layout.tsx
 import './globals.css';
 import { AppProvider } from '@/lib/context';
-import MainLayoutClient from './MainLayoutClient'; // Importamos el componente cliente
+import MainLayoutClient from './MainLayoutClient';
 
 export const metadata = {
   title: 'Footys Liga',
@@ -11,7 +10,8 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body className="bg-[#f3f4f6] text-black font-sans pb-32">
+      {/* FORZAMOS FONDO BLANCO Y TEXTO NEGRO AQUÍ 👇 */}
+      <body className="bg-white text-black font-sans min-h-screen">
         <AppProvider>
            <MainLayoutClient>
               {children}
