@@ -293,24 +293,66 @@ export default function TorneoPage() {
 }
 
 // ... MatchCard component (sin cambios) ...
+// ... (Todo el código anterior de TorneoPage sigue igual)
+
+// SUSTITUYE SOLO ESTE COMPONENTE AL FINAL DEL ARCHIVO
 function MatchCard({ m, onFinish, isFinal, label }: { m?: any, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean, label?: string }) {
     const [s1, setS1] = useState(""); const [s2, setS2] = useState("");
-    if (!m) return <div className="bg-gray-100 h-32 rounded-2xl animate-pulse"></div>;
+    
+    if (!m) return <div className="bg-gray-100/50 h-32 rounded-3xl animate-pulse border-2 border-gray-100"></div>;
     const isWaiting = m.p1 === "Esperando..." || m.p2 === "Esperando...";
-    if (m.isBye) return <div className="bg-green-50 border border-green-200 p-4 rounded-2xl flex flex-col items-center justify-center text-center h-full opacity-70"><span className="text-green-700 font-black text-[10px] uppercase mb-1 tracking-widest">Pase Directo</span><p className="font-black text-lg text-green-900">{m.winner}</p></div>;
+    
+    // Pase directo visualmente mejorado
+    if (m.isBye) return <div className="bg-green-50/50 border-2 border-green-100/50 p-4 rounded-3xl flex flex-col items-center justify-center text-center h-full opacity-60 backdrop-blur-sm"><span className="text-green-700 font-black text-[10px] uppercase mb-1 tracking-widest">Pase Directo</span><p className="font-black text-xl text-green-900">{m.winner}</p></div>;
+
+    // LÓGICA VISUAL:
+    // - Si ya hay ganador: Gris y apagado.
+    // - Si es la final: Borde dorado intenso y sombra.
+    // - Si está activo (jugándose): Borde animado de colores (NUEVO!).
+    // - Si está esperando: Borde gris suave.
+    let cardStyle = "border-2 border-gray-100 shadow-sm"; // Por defecto
+    if (m.winner) {
+        cardStyle = "border-2 border-gray-100 opacity-50 grayscale bg-gray-50/50 shadow-none";
+    } else if (isFinal && !isWaiting) {
+        cardStyle = "border-4 border-yellow-400 shadow-2xl shadow-yellow-200/50 scale-[1.02]";
+    } else if (!isWaiting) {
+        // APLICAMOS EL BORDE ANIMADO AQUÍ
+        cardStyle = "animated-border shadow-xl scale-[1.01]";
+    }
+
     return (
-        <div className={`relative bg-white border-2 ${m.winner ? 'border-gray-200 opacity-60 grayscale' : isFinal ? 'border-yellow-400 shadow-xl shadow-yellow-100' : 'border-gray-100 shadow-lg'} p-5 rounded-2xl overflow-hidden transition-all hover:scale-[1.02]`}>
-            {label && <div className="absolute top-0 right-0 bg-black text-white text-[9px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wider">{label}</div>}
-            <div className="flex justify-between items-center mb-3 pt-2">
-                <div className="overflow-hidden pr-2"><p className={`font-black text-base truncate ${m.winner===m.p1 ? 'text-green-600' : 'text-black'}`}>{m.p1}</p><div className="flex gap-2 text-[10px] font-bold uppercase tracking-wide"><span className="text-gray-400 truncate max-w-[80px]">{m.p1Club || 'Club'}</span><span className="text-blue-600 truncate max-w-[80px]">{m.p1Team}</span></div></div>
-                {m.winner ? <span className="font-mono font-black text-2xl text-black">{m.score1}</span> : <input type="number" className="w-12 h-12 bg-white text-center rounded-xl font-bold text-lg outline-none focus:border-black transition border-2 border-gray-200 text-black shadow-inner" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting} placeholder="0" />}
+        <div className={`relative bg-white p-6 rounded-3xl overflow-hidden transition-all duration-500 ${cardStyle}`}>
+            {label && <div className="absolute top-0 right-0 bg-black text-white text-[9px] font-bold px-4 py-1.5 rounded-bl-2xl uppercase tracking-wider shadow-sm">{label}</div>}
+            
+            {/* Jugador 1 */}
+            <div className="flex justify-between items-center mb-4 pt-2">
+                <div className="overflow-hidden pr-2">
+                    <p className={`font-black text-lg truncate transition-colors ${m.winner===m.p1 ? 'text-green-600' : 'text-black'}`}>{m.p1}</p>
+                    <div className="flex gap-2 text-[10px] font-bold uppercase tracking-wide opacity-80"><span className="text-gray-500 truncate max-w-[100px]">{m.p1Club || 'Club'}</span><span className="text-blue-600 truncate max-w-[100px]">{m.p1Team}</span></div>
+                </div>
+                {m.winner ? <span className="font-mono font-black text-3xl text-black">{m.score1}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black transition border-2 border-gray-100 text-black shadow-inner" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting} placeholder="-" />}
             </div>
-            <div className="w-full h-px bg-gray-100 mb-3 flex items-center justify-center"><span className="bg-white px-2 text-[10px] text-gray-300 font-black">VS</span></div>
-            <div className="flex justify-between items-center mb-4">
-                <div className="overflow-hidden pr-2"><p className={`font-black text-base truncate ${m.winner===m.p2 ? 'text-green-600' : 'text-black'}`}>{m.p2}</p><div className="flex gap-2 text-[10px] font-bold uppercase tracking-wide"><span className="text-gray-400 truncate max-w-[80px]">{m.p2Club || 'Club'}</span><span className="text-blue-600 truncate max-w-[80px]">{m.p2Team}</span></div></div>
-                {m.winner ? <span className="font-mono font-black text-2xl text-black">{m.score2}</span> : <input type="number" className="w-12 h-12 bg-white text-center rounded-xl font-bold text-lg outline-none focus:border-black transition border-2 border-gray-200 text-black shadow-inner" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} placeholder="0" />}
+            
+            {/* Separador VS */}
+            <div className="w-full h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-4 flex items-center justify-center">
+                <span className="bg-white px-3 text-xs text-gray-400 font-black tracking-widest rounded-full border border-gray-100 italic">VS</span>
             </div>
-            {!m.winner && !isWaiting && <button onClick={()=>s1&&s2&&onFinish(m.id, +s1, +s2)} className="w-full bg-black text-white text-[10px] font-black py-3 rounded-xl hover:bg-gray-800 transition shadow-lg uppercase tracking-widest">Finalizar Partido</button>}
+            
+            {/* Jugador 2 */}
+            <div className="flex justify-between items-center mb-6">
+                <div className="overflow-hidden pr-2">
+                    <p className={`font-black text-lg truncate transition-colors ${m.winner===m.p2 ? 'text-green-600' : 'text-black'}`}>{m.p2}</p>
+                    <div className="flex gap-2 text-[10px] font-bold uppercase tracking-wide opacity-80"><span className="text-gray-500 truncate max-w-[100px]">{m.p2Club || 'Club'}</span><span className="text-blue-600 truncate max-w-[100px]">{m.p2Team}</span></div>
+                </div>
+                {m.winner ? <span className="font-mono font-black text-3xl text-black">{m.score2}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black transition border-2 border-gray-100 text-black shadow-inner" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} placeholder="-" />}
+            </div>
+
+            {/* Botón de Finalizar (Ahora es negro mate más elegante) */}
+            {!m.winner && !isWaiting && (
+                <button onClick={()=>s1&&s2&&onFinish(m.id, +s1, +s2)} className="w-full bg-black hover:bg-gray-900 text-white text-xs font-black py-4 rounded-2xl transition-all shadow-md hover:shadow-xl active:scale-95 uppercase tracking-widest flex justify-center items-center gap-2 group">
+                    Finalizar Partido <span className="group-hover:translate-x-1 transition-transform">→</span>
+                </button>
+            )}
         </div>
     );
 }
