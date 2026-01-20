@@ -7,7 +7,7 @@ import {
   addDoc, serverTimestamp, getDocs, writeBatch, deleteDoc 
 } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
-import { Trophy, Banknote, Dices, Skull, UserCircle, LogOut, Settings, ChevronRight, Lock } from 'lucide-react';
+import { Trophy, Banknote, Dices, Skull, UserCircle, LogOut, Settings, ChevronRight, Lock, TrendingUp, History } from 'lucide-react';
 
 // --- TIPOS ---
 type Match = { 
@@ -29,7 +29,7 @@ const BYE_NAME = "Pase Directo ➡️";
 const STARTING_BALANCE = 1000;
 
 // --- DATOS FIJOS ---
-const TEAMS_REAL = ["Man. City 🔵", "Real Madrid 👑", "Bayern 🔴", "Liverpool 🔴", "Arsenal 🔴", "Inter ⚫🔵", "PSG 🗼", "Barça 🔵🔴", "Atleti 🔴⚪", "Leverkusen ⚫🔴", "Milan ⚫🔴", "Juve ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Spurs ⚪", "Villa 🦁", "Newcastle ⚫⚪"];
+const TEAMS_REAL = ["Man. City", "Real Madrid", "Bayern", "Liverpool", "Arsenal", "Inter", "PSG", "Barça", "Atleti", "Leverkusen", "Milan", "Juve", "Dortmund", "Chelsea", "Napoli", "Spurs", "Villa", "Newcastle"];
 const TEAMS_FUNNY = ["Aston Birra", "Vodka Juniors", "Rayo Vayacaño", "Coca Juniors", "Maccabi de Levantar", "Steaua del Grifo", "Schalke Te Meto", "Abuelos FC", "Patético", "Bajern", "Real Suciedad", "Olimpique", "West Jamón", "Levante en Barra", "Borussia Birra", "Peshownal", "Estrella Coja", "Fenerbache"];
 const EXCUSAS = ["Mando roto", "Lag", "Handicap", "Sol en la cara", "Probando tácticas", "Árbitro comprado", "Jugador bugueado", "Dedos fríos", "5 defensas", "Portero manco"];
 const NEWS_TICKER = ["🚨 ÚLTIMA HORA: Se busca la dignidad de los perdedores en objetos perdidos.", "⚽ MERCADO: El Aston Birra ofrece 2 pipas por el fichaje estrella.", "⚠️ ATENCIÓN: Jugar con 5 defensas está penado con cárcel.", "👀 OJO: Se rumorea que el líder del ranking hace trampas.", "🏆 CHAMPIONS: La orejona busca dueño.", "🚑 PARTE MÉDICO: Varios pulgares lesionados tras el último partido."];
@@ -61,6 +61,7 @@ function AppContent() {
   const [resultadoRuleta, setResultadoRuleta] = useState<string>("Gira la ruleta...");
   const [isSpinning, setIsSpinning] = useState(false);
   const [excusa, setExcusa] = useState<string | null>(null);
+  const [showDJ, setShowDJ] = useState(false);
   
   // FORMS
   const [loginName, setLoginName] = useState("");
@@ -164,6 +165,7 @@ function AppContent() {
           ];
       }
 
+      // Propagar BYEs iniciales
       matches.forEach(m => { if(m.p2===BYE_NAME){m.winner=m.p1;m.isBye=true} else if(m.p1===BYE_NAME){m.winner=m.p2;m.isBye=true} });
       const propagate = (tIdx: number, slot: 'p1'|'p2', s: Match) => {
         const wKey = s.winner===s.p1?'p1':'p2';
@@ -190,6 +192,7 @@ function AppContent() {
     const lTeam = isP1 ? m.p2Team : m.p1Team; const lClub = isP1 ? m.p2Club : m.p1Club;
 
     try {
+      // APUESTAS
       const pending = activeBets.filter(b => b.matchId === matchId && b.status === 'pending');
       const batch = writeBatch(db);
       pending.forEach(b => {
@@ -278,55 +281,43 @@ function AppContent() {
             @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         `}} />
 
-        {/* --- HEADER PROFESIONAL (ESTILO APP) --- */}
-        <header className="sticky top-0 z-50 bg-white shadow-md border-b border-gray-200">
-            <div className="flex items-center justify-between px-4 py-3 max-w-4xl mx-auto">
-                {/* LOGO */}
-                <div className="flex items-center gap-2 cursor-pointer" onClick={()=>setActiveTab('fifa')}>
-                    <span className="text-2xl">🏆</span>
-                    <h1 className="text-xl font-black italic tracking-tighter text-black">
-                        FOOTYS <span className="text-blue-600">LIGA</span>
-                    </h1>
-                </div>
+        {/* HERO CAROUSEL */}
+        <HeroCarousel />
 
-                {/* AREA DE USUARIO (DERECHA) */}
-                <div className="flex items-center gap-3">
-                    {currentUser ? (
-                        <div 
-                            className="flex items-center gap-2 bg-gray-100 pl-3 pr-2 py-1.5 rounded-full border border-gray-200 cursor-pointer hover:bg-gray-200 transition"
-                            onClick={()=>setActiveTab('perfil')}
-                        >
-                            <div className="text-right leading-none">
-                                <p className="font-bold text-xs uppercase text-black">{currentUser.id}</p>
-                                <p className="font-mono text-[10px] text-green-600 font-black">{currentUser.balance} €</p>
-                            </div>
-                            <div className="bg-black text-white p-1.5 rounded-full"><UserCircle size={18} /></div>
+        {/* HEADER */}
+        <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm px-4 py-3 flex items-center justify-between">
+            <h1 className="text-lg font-black tracking-tighter uppercase italic">FOOTYS <span className="text-blue-600">LIGA</span></h1>
+            <div className="flex gap-4">
+                {currentUser ? (
+                    <div className="text-right leading-tight cursor-pointer flex items-center gap-2" onClick={()=>setActiveTab('perfil')}>
+                        <div>
+                            <p className="font-bold text-xs uppercase text-black">{currentUser.id}</p>
+                            <p className="font-mono text-xs text-green-600 font-black">{currentUser.balance} €</p>
                         </div>
-                    ) : (
-                        <button onClick={()=>setActiveTab('perfil')} className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-gray-800 transition">
-                            <Lock size={12}/> ACCESO
-                        </button>
-                    )}
-                    <button onClick={()=>setShowSettings(true)} className="p-2 text-gray-400 hover:text-black transition"><Settings size={20}/></button>
-                </div>
+                        <UserCircle size={24} className="text-black"/>
+                    </div>
+                ) : (
+                    <button onClick={()=>setActiveTab('perfil')} className="text-xs font-bold bg-black text-white px-4 py-1.5 rounded-full shadow-lg">LOGIN</button>
+                )}
+                <button onClick={()=>setShowSettings(true)} className="text-gray-400 hover:text-black"><Settings size={20}/></button>
             </div>
-        </header>
+        </div>
 
-        {/* --- TICKER DE NOTICIAS (EL BANNER QUE SE MUEVE) --- */}
-        <div className="bg-black text-white overflow-hidden py-2 border-b border-blue-600">
+        {/* TICKER NOTICIAS */}
+        <div className="bg-black text-white overflow-hidden py-1 border-b border-blue-600">
             <div className="animate-marquee whitespace-nowrap flex gap-12">
                 {[...NEWS_TICKER, ...NEWS_TICKER].map((txt, i) => (
-                    <span key={i} className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                    <span key={i} className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-2">
                         <span className="text-blue-400">●</span> {txt}
                     </span>
                 ))}
             </div>
         </div>
 
-        {/* --- CONTENIDO PRINCIPAL --- */}
+        {/* CONTENIDO PRINCIPAL */}
         <div className="max-w-4xl mx-auto p-4 pb-24">
             
-            {/* TABS DE NAVEGACION */}
+            {/* TABS */}
             <div className="flex gap-2 overflow-x-auto hide-scrollbar mb-6 pb-2">
                 {[
                     {id:'fifa', label:'Torneo', icon:<Trophy size={16}/>},
@@ -342,68 +333,93 @@ function AppContent() {
 
             {/* SECCIONES */}
             
-            {/* PERFIL */}
+            {/* PERFIL (REDISEÑO CLARO) */}
             {activeTab === 'perfil' && (
                 <div className="fade-in space-y-6">
                     {!currentUser ? (
                         <div className="max-w-sm mx-auto bg-white p-8 rounded-3xl border border-gray-200 shadow-xl">
-                            <h2 className="text-2xl font-black text-center mb-6 text-black">{isRegistering ? 'NUEVO FICHAJE' : 'INICIAR SESIÓN'}</h2>
+                            <h2 className="text-2xl font-black text-center mb-6 text-black tracking-tight">{isRegistering ? 'NUEVO FICHAJE' : 'ACCESO SOCIOS'}</h2>
                             <div className="space-y-4">
-                                <input className="w-full bg-gray-50 p-4 rounded-xl border border-gray-200 text-black font-medium focus:border-black focus:ring-0 outline-none transition" placeholder="Nombre de Usuario" value={isRegistering ? regName : loginName} onChange={e => isRegistering ? setRegName(e.target.value) : setLoginName(e.target.value)} />
-                                {isRegistering && <input className="w-full bg-gray-50 p-4 rounded-xl border border-gray-200 text-black font-medium focus:border-black outline-none" placeholder="Nombre Club (Ej: Aston Birra)" value={regClub} onChange={e => setRegClub(e.target.value)} />}
-                                <input className="w-full bg-gray-50 p-4 rounded-xl border border-gray-200 text-black font-medium focus:border-black outline-none" type="password" placeholder="Contraseña" value={isRegistering ? regPass : loginPass} onChange={e => isRegistering ? setRegPass(e.target.value) : setLoginPass(e.target.value)} />
-                                <button onClick={isRegistering ? handleRegister : handleLogin} className="w-full bg-black text-white font-bold p-4 rounded-xl hover:bg-gray-800 transition shadow-lg">{isRegistering ? 'CREAR CUENTA' : 'ENTRAR'}</button>
+                                <input 
+                                    className="w-full bg-white p-4 rounded-xl border-2 border-gray-200 text-black font-bold placeholder:text-gray-400 focus:border-black outline-none transition" 
+                                    placeholder="Nombre de Usuario" 
+                                    value={isRegistering ? regName : loginName} 
+                                    onChange={e => isRegistering ? setRegName(e.target.value) : setLoginName(e.target.value)} 
+                                />
+                                {isRegistering && (
+                                    <input 
+                                        className="w-full bg-white p-4 rounded-xl border-2 border-gray-200 text-black font-bold placeholder:text-gray-400 focus:border-black outline-none transition" 
+                                        placeholder="Nombre Club (Ej: Aston Birra)" 
+                                        value={regClub} 
+                                        onChange={e => setRegClub(e.target.value)} 
+                                    />
+                                )}
+                                <input 
+                                    className="w-full bg-white p-4 rounded-xl border-2 border-gray-200 text-black font-bold placeholder:text-gray-400 focus:border-black outline-none transition" 
+                                    type="password" 
+                                    placeholder="Contraseña" 
+                                    value={isRegistering ? regPass : loginPass} 
+                                    onChange={e => isRegistering ? setRegPass(e.target.value) : setLoginPass(e.target.value)} 
+                                />
+                                <button onClick={isRegistering ? handleRegister : handleLogin} className="w-full bg-black text-white font-black p-4 rounded-xl hover:bg-gray-800 transition shadow-lg text-sm tracking-widest uppercase">{isRegistering ? 'CREAR CUENTA' : 'ENTRAR AL VESTUARIO'}</button>
                             </div>
-                            <p className="text-center text-gray-500 text-sm mt-4 cursor-pointer hover:underline hover:text-black" onClick={() => setIsRegistering(!isRegistering)}>{isRegistering ? '¿Ya tienes cuenta? Entra aquí' : '¿No tienes cuenta? Regístrate'}</p>
+                            <p className="text-center text-gray-500 text-xs mt-4 cursor-pointer hover:underline hover:text-black font-bold uppercase tracking-wide" onClick={() => setIsRegistering(!isRegistering)}>{isRegistering ? '¿Ya tienes cuenta? Entra aquí' : '¿No tienes cuenta? Regístrate'}</p>
                         </div>
                     ) : (
                         <div className="space-y-6">
-                            {/* TARJETA DE USUARIO */}
-                            <div className="bg-black text-white p-6 rounded-3xl shadow-xl flex justify-between items-center relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full -mr-10 -mt-10 blur-2xl opacity-50"></div>
+                            {/* CARD DE USUARIO BLANCA PRO */}
+                            <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-200 flex justify-between items-center relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-24 h-full bg-gray-50 -skew-x-12 transform translate-x-8"></div>
                                 <div className="relative z-10">
-                                    <h2 className="text-3xl font-black italic uppercase">{currentUser.id}</h2>
-                                    <p className="text-gray-400 text-sm font-bold uppercase tracking-widest">{currentUser.clubName}</p>
+                                    <h2 className="text-3xl font-black text-black italic uppercase tracking-tighter">{currentUser.id}</h2>
+                                    <p className="text-gray-400 text-xs font-black uppercase tracking-widest bg-gray-100 px-2 py-1 rounded inline-block mt-1">{currentUser.clubName}</p>
                                 </div>
                                 <div className="text-right relative z-10">
-                                    <p className="text-xs text-gray-400 uppercase tracking-widest">Saldo Disponible</p>
-                                    <p className="text-4xl font-mono font-black text-green-400">{currentUser.balance} €</p>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Presupuesto</p>
+                                    <p className="text-4xl font-mono font-black text-black tracking-tighter">{currentUser.balance} €</p>
                                 </div>
                             </div>
 
                             {/* ESTADÍSTICAS */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm text-center">
-                                    <p className="text-4xl font-black text-black">{ranking.find(r=>r.nombre===currentUser.id)?.victorias || 0}</p>
-                                    <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">Victorias</p>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm text-center">
+                                    <Trophy className="w-5 h-5 mx-auto mb-2 text-yellow-500" />
+                                    <p className="text-2xl font-black text-black">{ranking.find(r=>r.nombre===currentUser.id)?.victorias || 0}</p>
+                                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Victorias</p>
                                 </div>
-                                <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm text-center">
-                                    <p className="text-4xl font-black text-blue-600">{ranking.find(r=>r.nombre===currentUser.id)?.puntos || 0}</p>
-                                    <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">Puntos</p>
+                                <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm text-center">
+                                    <TrendingUp className="w-5 h-5 mx-auto mb-2 text-blue-600" />
+                                    <p className="text-2xl font-black text-black">{ranking.find(r=>r.nombre===currentUser.id)?.puntos || 0}</p>
+                                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Puntos</p>
+                                </div>
+                                <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm text-center">
+                                    <History className="w-5 h-5 mx-auto mb-2 text-purple-600" />
+                                    <p className="text-2xl font-black text-black">{history.filter(h => h.winner === currentUser.id).length}</p>
+                                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Títulos</p>
                                 </div>
                             </div>
 
                             {/* ÚLTIMAS APUESTAS */}
                             <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
-                                <h3 className="font-black text-sm uppercase mb-4 text-gray-400">Historial de Apuestas</h3>
+                                <h3 className="font-black text-xs uppercase mb-4 text-gray-400 tracking-widest border-b pb-2">Historial de Apuestas</h3>
                                 <div className="space-y-2">
                                     {activeBets.filter(b => b.bettor === currentUser.id).length > 0 ? (
                                         activeBets.filter(b => b.bettor === currentUser.id).map(b => (
                                             <div key={b.id} className="flex justify-between items-center text-sm p-3 bg-gray-50 rounded-xl border border-gray-100">
-                                                <span>Apostaste a <span className="text-black font-bold">{b.chosenWinner}</span></span>
-                                                <span className={`font-bold ${b.status==='won'?'text-green-600':b.status==='lost'?'text-red-500':'text-yellow-600'}`}>
-                                                    {b.status==='won' ? `+${b.amount*2}€` : b.status==='lost' ? `-${b.amount}€` : 'Pendiente'}
+                                                <span>Apostaste a <span className="text-black font-bold uppercase">{b.chosenWinner}</span></span>
+                                                <span className={`font-bold font-mono ${b.status==='won'?'text-green-600':b.status==='lost'?'text-red-500':'text-yellow-600'}`}>
+                                                    {b.status==='won' ? `+${b.amount*2}€` : b.status==='lost' ? `-${b.amount}€` : 'PENDIENTE'}
                                                 </span>
                                             </div>
                                         ))
                                     ) : (
-                                        <p className="text-gray-400 text-sm text-center py-4 italic">No tienes apuestas activas.</p>
+                                        <p className="text-gray-400 text-xs text-center py-4 italic">No tienes apuestas activas.</p>
                                     )}
                                 </div>
                             </div>
 
-                            <button onClick={logout} className="w-full bg-white border-2 border-red-100 text-red-500 font-bold p-4 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 transition">
-                                <LogOut size={18}/> CERRAR SESIÓN
+                            <button onClick={logout} className="w-full bg-white border-2 border-red-100 text-red-500 font-bold p-4 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 transition text-xs uppercase tracking-widest">
+                                <LogOut size={16}/> CERRAR SESIÓN
                             </button>
                         </div>
                     )}
@@ -415,24 +431,24 @@ function AppContent() {
                 <div className="fade-in">
                     {fifaMatches.length === 0 ? (
                         <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-lg text-center">
-                            <h2 className="text-2xl font-black mb-2 text-black">Configurar Torneo</h2>
-                            <p className="text-gray-500 text-sm mb-6">Selecciona los jugadores para empezar.</p>
+                            <h2 className="text-2xl font-black mb-2 text-black tracking-tight">TEMPORADA 24/25</h2>
+                            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-6">Configura tu torneo</p>
                             
                             <div className="flex justify-center gap-2 mb-6">
-                                <button onClick={()=>setGameMode('1vs1')} className={`px-6 py-2 rounded-full font-bold text-sm transition ${gameMode==='1vs1'?'bg-black text-white shadow-lg':'bg-gray-100 text-gray-500'}`}>1 vs 1</button>
-                                <button onClick={()=>setGameMode('2vs2')} className={`px-6 py-2 rounded-full font-bold text-sm transition ${gameMode==='2vs2'?'bg-black text-white shadow-lg':'bg-gray-100 text-gray-500'}`}>2 vs 2</button>
+                                <button onClick={()=>setGameMode('1vs1')} className={`px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition ${gameMode==='1vs1'?'bg-black text-white shadow-lg':'bg-gray-100 text-gray-400'}`}>1 vs 1</button>
+                                <button onClick={()=>setGameMode('2vs2')} className={`px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition ${gameMode==='2vs2'?'bg-black text-white shadow-lg':'bg-gray-100 text-gray-400'}`}>2 vs 2</button>
                             </div>
 
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 text-left">
                                 {users.map(u => (
-                                    <button key={u.id} onClick={()=>togglePlayerSelection(u.id)} className={`p-3 rounded-xl border text-sm font-bold truncate transition flex items-center gap-2 ${selectedPlayers.includes(u.id)?'bg-black text-white border-black shadow-md':'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                                    <button key={u.id} onClick={()=>togglePlayerSelection(u.id)} className={`p-3 rounded-xl border-2 text-xs font-bold truncate transition flex items-center gap-2 ${selectedPlayers.includes(u.id)?'bg-black text-white border-black shadow-md':'bg-white text-gray-600 border-gray-100 hover:border-gray-300'}`}>
                                         <div className={`w-2 h-2 rounded-full ${selectedPlayers.includes(u.id)?'bg-green-400':'bg-gray-300'}`}></div>
                                         {u.id}
                                     </button>
                                 ))}
                             </div>
                             
-                            <button onClick={handleCrearTorneo} className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl hover:bg-blue-700 transition transform hover:scale-[1.02] active:scale-95">
+                            <button onClick={handleCrearTorneo} className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl hover:bg-blue-700 transition transform hover:scale-[1.01] active:scale-95 text-sm uppercase tracking-widest">
                                 COMENZAR TORNEO ({selectedPlayers.length})
                             </button>
                         </div>
@@ -444,8 +460,7 @@ function AppContent() {
                                 {fifaMatches.length===8 && [4,5].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} label="SEMIFINAL" />)}
                                 
                                 {/* FINALES */}
-                                <div className="md:col-span-2 space-y-4 pt-4 border-t border-gray-200">
-                                    <h3 className="text-center font-black text-gray-400 text-xs tracking-[0.3em] uppercase">Finales</h3>
+                                <div className="md:col-span-2 space-y-4 pt-6 border-t-2 border-dashed border-gray-200">
                                     <div className="grid gap-4 md:grid-cols-2">
                                         <MatchCard m={fifaMatches[fifaMatches.length===4 ? 2 : 6]} onFinish={finalizarPartido} isFinal label="🏆 GRAN FINAL" />
                                         <MatchCard m={fifaMatches[fifaMatches.length===4 ? 3 : 7]} onFinish={finalizarPartido} label="🥉 3er PUESTO" />
@@ -457,27 +472,28 @@ function AppContent() {
                 </div>
             )}
 
-            {/* APUESTAS */}
+            {/* APUESTAS (CORREGIDO CONTRASTE) */}
             {activeTab === 'apuestas' && (
                 <div className="fade-in space-y-6 max-w-xl mx-auto">
                     {!currentUser ? (
                         <div className="text-center p-12 bg-white rounded-3xl border border-gray-200 shadow-sm">
                             <Lock size={48} className="mx-auto mb-4 text-gray-300"/>
-                            <h3 className="font-bold text-lg">Acceso Restringido</h3>
-                            <p className="text-gray-500 text-sm mb-6">Inicia sesión en tu perfil para apostar.</p>
-                            <button onClick={()=>setActiveTab('perfil')} className="bg-black text-white px-6 py-2 rounded-full font-bold text-sm">Ir al Perfil</button>
+                            <h3 className="font-bold text-lg text-black">Acceso Restringido</h3>
+                            <p className="text-gray-500 text-sm mb-6">Debes identificarte para jugar tu dinero.</p>
+                            <button onClick={()=>setActiveTab('perfil')} className="bg-black text-white px-6 py-2 rounded-full font-bold text-xs uppercase tracking-widest">Ir al Perfil</button>
                         </div>
                     ) : (
                         <>
-                            <div className="bg-white border border-yellow-400 p-6 rounded-3xl shadow-xl relative overflow-hidden">
-                                <div className="absolute top-0 left-0 w-full h-2 bg-yellow-400"></div>
+                            <div className="bg-white border-2 border-yellow-400 p-6 rounded-3xl shadow-xl relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-full h-3 bg-yellow-400"></div>
                                 <h2 className="text-xl font-black text-black mb-6 uppercase italic flex items-center gap-2"><Banknote className="text-yellow-600"/> Casa de Apuestas</h2>
                                 
                                 {fifaMatches.length > 0 ? (
                                     <div className="space-y-4">
                                         <div>
-                                            <label className="text-xs font-bold text-gray-400 uppercase ml-1">Partido</label>
-                                            <select className="w-full bg-gray-50 p-4 rounded-xl border border-gray-200 text-black font-bold outline-none mt-1" onChange={e=>{const m=fifaMatches.find(x=>x.id===parseInt(e.target.value));setSelectedMatchId(parseInt(e.target.value));setBetTarget("");}}>
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Partido</label>
+                                            {/* SELECT CORREGIDO PARA ALTO CONTRASTE */}
+                                            <select className="w-full bg-white p-4 rounded-xl border-2 border-gray-200 text-black font-bold outline-none mt-1 focus:border-black transition" onChange={e=>{const m=fifaMatches.find(x=>x.id===parseInt(e.target.value));setSelectedMatchId(parseInt(e.target.value));setBetTarget("");}}>
                                                 <option value="">Selecciona un enfrentamiento...</option>
                                                 {fifaMatches.filter(m => !m.winner && !m.isBye).map(m => (<option key={m.id} value={m.id}>{m.p1} vs {m.p2}</option>))}
                                             </select>
@@ -485,31 +501,31 @@ function AppContent() {
 
                                         {selectedMatchId !== null && (
                                             <div className="grid grid-cols-2 gap-3">
-                                                <button onClick={()=>setBetTarget(fifaMatches[selectedMatchId!].p1)} className={`p-4 rounded-xl border-2 text-sm font-black transition ${betTarget===fifaMatches[selectedMatchId!].p1?'bg-black text-white border-black':'bg-white text-gray-500 border-gray-200 hover:border-black'}`}>{fifaMatches[selectedMatchId!].p1}</button>
-                                                <button onClick={()=>setBetTarget(fifaMatches[selectedMatchId!].p2)} className={`p-4 rounded-xl border-2 text-sm font-black transition ${betTarget===fifaMatches[selectedMatchId!].p2?'bg-black text-white border-black':'bg-white text-gray-500 border-gray-200 hover:border-black'}`}>{fifaMatches[selectedMatchId!].p2}</button>
+                                                <button onClick={()=>setBetTarget(fifaMatches[selectedMatchId!].p1)} className={`p-4 rounded-xl border-2 text-sm font-black transition uppercase ${betTarget===fifaMatches[selectedMatchId!].p1?'bg-black text-white border-black':'bg-white text-gray-400 border-gray-200 hover:border-gray-400'}`}>{fifaMatches[selectedMatchId!].p1}</button>
+                                                <button onClick={()=>setBetTarget(fifaMatches[selectedMatchId!].p2)} className={`p-4 rounded-xl border-2 text-sm font-black transition uppercase ${betTarget===fifaMatches[selectedMatchId!].p2?'bg-black text-white border-black':'bg-white text-gray-400 border-gray-200 hover:border-gray-400'}`}>{fifaMatches[selectedMatchId!].p2}</button>
                                             </div>
                                         )}
 
                                         <div>
-                                            <label className="text-xs font-bold text-gray-400 uppercase ml-1">Cantidad</label>
-                                            <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-200 mt-1">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Cantidad</label>
+                                            <div className="flex items-center gap-3 bg-white p-3 rounded-xl border-2 border-gray-200 mt-1 focus-within:border-black transition">
                                                 <span className="text-xl">💰</span>
                                                 <input type="number" className="bg-transparent w-full outline-none text-black font-mono font-bold text-lg" value={betAmount} onChange={e=>setBetAmount(parseInt(e.target.value))} />
                                             </div>
                                         </div>
 
-                                        <button onClick={realizarApuesta} className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-black p-4 rounded-xl shadow-lg uppercase tracking-wider transition transform active:scale-95 mt-2">CONFIRMAR APUESTA</button>
+                                        <button onClick={realizarApuesta} className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-black p-4 rounded-xl shadow-lg uppercase tracking-wider transition transform active:scale-95 mt-2 border-b-4 border-yellow-600 active:border-b-0 active:mt-3">CONFIRMAR APUESTA</button>
                                     </div>
-                                ) : (<p className="text-gray-500 text-center py-6">No hay partidos disponibles para apostar.</p>)}
+                                ) : (<p className="text-gray-500 text-center py-6 text-sm font-medium">No hay partidos disponibles para apostar.</p>)}
                             </div>
                             
                             <div>
                                 <h3 className="font-bold text-gray-400 uppercase text-xs tracking-widest mb-3 ml-2">Mercado en Vivo</h3>
                                 <div className="space-y-2">
                                     {activeBets.filter(b => b.status === 'pending').map(b => (
-                                        <div key={b.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center text-sm">
-                                            <div><span className="font-bold text-black">{b.bettor}</span> <span className="text-gray-400 text-xs">vs</span> <span className="text-blue-600 font-bold">{b.chosenWinner}</span></div>
-                                            <span className="font-mono font-bold bg-gray-100 px-3 py-1 rounded-lg text-black">{b.amount} €</span>
+                                        <div key={b.id} className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex justify-between items-center text-sm">
+                                            <div><span className="font-bold text-black uppercase">{b.bettor}</span> <span className="text-gray-400 text-xs">vs</span> <span className="text-blue-600 font-bold uppercase">{b.chosenWinner}</span></div>
+                                            <span className="font-mono font-bold bg-gray-100 px-3 py-1 rounded-lg text-black border border-gray-200">{b.amount} €</span>
                                         </div>
                                     ))}
                                     {activeBets.filter(b => b.status === 'pending').length === 0 && <p className="text-gray-400 text-xs text-center italic py-4">El mercado está tranquilo...</p>}
@@ -525,7 +541,7 @@ function AppContent() {
                 <div className="fade-in max-w-xl mx-auto space-y-6">
                     <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-lg">
                         <h2 className="text-xl font-black text-black mb-4 uppercase italic">Generador de Equipos</h2>
-                        <textarea className="w-full h-32 bg-gray-50 border-2 border-gray-100 rounded-xl p-4 text-black font-medium resize-none outline-none focus:border-black transition" placeholder="Escribe los nombres aquí..." value={pachangaInput} onChange={e=>setPachangaInput(e.target.value)}></textarea>
+                        <textarea className="w-full h-32 bg-gray-50 border-2 border-gray-100 rounded-xl p-4 text-black font-medium resize-none outline-none focus:border-black transition placeholder:text-gray-400" placeholder="Escribe los nombres aquí (uno por línea o comas)..." value={pachangaInput} onChange={e=>setPachangaInput(e.target.value)}></textarea>
                         <button onClick={handleSorteoPachanga} className="w-full bg-black text-white font-black py-4 rounded-xl uppercase mt-4 hover:bg-gray-800 transition">Mezclar Jugadores</button>
                     </div>
                     {equipoA.length > 0 && (
@@ -543,25 +559,25 @@ function AppContent() {
                     <div className="bg-white border-2 border-red-100 p-8 rounded-3xl shadow-xl relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-2 bg-red-500"></div>
                         <h2 className="text-red-500 font-black uppercase tracking-widest mb-4 text-xs">La Sentencia</h2>
-                        <p className={`text-3xl font-black ${isSpinning?'blur-sm text-gray-300':'text-black'}`}>{resultadoRuleta}</p>
+                        <p className={`text-2xl font-black ${isSpinning?'blur-sm text-gray-300':'text-black'}`}>{resultadoRuleta}</p>
                     </div>
                     
-                    <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
-                        <span className="text-xs font-bold text-gray-400 uppercase">Cronómetro</span>
+                    <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Cronómetro</span>
                         <div className="flex gap-2">
-                            <button onClick={()=>startTimer(30)} className="bg-gray-100 px-3 py-1 rounded-lg text-xs font-bold hover:bg-gray-200">30s</button>
-                            <button onClick={()=>startTimer(60)} className="bg-gray-100 px-3 py-1 rounded-lg text-xs font-bold hover:bg-gray-200">60s</button>
+                            <button onClick={()=>startTimer(30)} className="bg-gray-100 px-3 py-1 rounded-lg text-xs font-bold hover:bg-gray-200 text-black">30s</button>
+                            <button onClick={()=>startTimer(60)} className="bg-gray-100 px-3 py-1 rounded-lg text-xs font-bold hover:bg-gray-200 text-black">60s</button>
                             <button onClick={()=>setTimeLeft(0)} className="bg-red-50 text-red-500 px-3 py-1 rounded-lg text-xs font-bold hover:bg-red-100">Stop</button>
                         </div>
                     </div>
-                    <div className="text-6xl font-mono font-black text-gray-200 tracking-widest text-center my-4">{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}</div>
+                    <div className="text-6xl font-mono font-black text-gray-300 tracking-widest text-center my-4">{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}</div>
                     
-                    <button onClick={()=>setExcusa(EXCUSAS[Math.floor(Math.random()*EXCUSAS.length)])} className="text-blue-500 text-xs font-bold hover:underline">Generar Excusa Aleatoria</button>
-                    {excusa && <p className="text-gray-500 italic text-sm p-4 bg-gray-50 rounded-xl border border-gray-100">"{excusa}"</p>}
+                    <button onClick={()=>setExcusa(EXCUSAS[Math.floor(Math.random()*EXCUSAS.length)])} className="text-blue-500 text-xs font-bold hover:underline uppercase tracking-wide">Generar Excusa Aleatoria</button>
+                    {excusa && <p className="text-black italic text-sm p-4 bg-gray-50 rounded-xl border border-gray-200">"{excusa}"</p>}
                     
                     <div className="grid grid-cols-2 gap-3">
-                        <button disabled={isSpinning} onClick={()=>girarRuleta('soft')} className="bg-gray-800 p-4 rounded-xl font-bold text-white hover:bg-gray-700 transition">Soft</button>
-                        <button disabled={isSpinning} onClick={()=>girarRuleta('chupito')} className="bg-red-600 p-4 rounded-xl font-bold text-white shadow-lg shadow-red-500/20 hover:bg-red-700 transition">SHOT 🥃</button>
+                        <button disabled={isSpinning} onClick={()=>girarRuleta('soft')} className="bg-gray-800 p-4 rounded-xl font-bold text-white hover:bg-gray-700 transition uppercase text-sm tracking-widest">Soft</button>
+                        <button disabled={isSpinning} onClick={()=>girarRuleta('chupito')} className="bg-red-600 p-4 rounded-xl font-bold text-white shadow-lg shadow-red-500/20 hover:bg-red-700 transition uppercase text-sm tracking-widest">SHOT 🥃</button>
                     </div>
                 </div>
             )}
@@ -571,21 +587,46 @@ function AppContent() {
         {/* MODAL SETTINGS */}
         {showSettings && (
             <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={()=>setShowSettings(false)}>
-                <div className="bg-white p-6 rounded-3xl w-full max-w-xs space-y-3 shadow-2xl" onClick={e=>e.stopPropagation()}>
-                    <h3 className="text-lg font-black text-center uppercase mb-4">Gestión</h3>
-                    <button onClick={limpiarPizarra} className="w-full bg-blue-50 hover:bg-blue-100 text-blue-600 p-4 rounded-xl font-bold text-sm transition">🔄 Nuevo Torneo</button>
-                    <button onClick={()=>setShowSettings(false)} className="w-full text-center text-gray-400 text-xs mt-2 p-2 hover:text-black">Cancelar</button>
+                <div className="bg-white p-6 rounded-3xl w-full max-w-xs space-y-3 shadow-2xl border-2 border-gray-100" onClick={e=>e.stopPropagation()}>
+                    <h3 className="text-lg font-black text-center uppercase mb-4 text-black">Gestión</h3>
+                    <button onClick={limpiarPizarra} className="w-full bg-blue-50 hover:bg-blue-100 text-blue-600 p-4 rounded-xl font-bold text-sm transition uppercase tracking-wide">🔄 Empezar Nuevo Torneo</button>
+                    <button onClick={()=>setShowSettings(false)} className="w-full text-center text-gray-400 text-xs mt-2 p-2 hover:text-black font-bold uppercase">Cerrar</button>
                 </div>
             </div>
         )}
 
         {/* EXTRAS FLOTANTES */}
-        {mayorPaliza && (<div className="fixed top-24 left-1/2 -translate-x-1/2 w-11/12 max-w-sm bg-white text-black p-4 rounded-xl flex items-center justify-between shadow-2xl z-40 animate-in slide-in-from-top-4 border-l-4 border-pink-500"><div className="text-xs"><p className="text-pink-500 font-bold uppercase">Humillación</p><p className="font-bold">{mayorPaliza.winner} <span className="text-gray-400 font-normal">vs</span> {mayorPaliza.loser}</p></div><span className="text-2xl font-black italic">{mayorPaliza.result}</span></div>)}
+        {mayorPaliza && (<div className="fixed top-24 left-1/2 -translate-x-1/2 w-11/12 max-w-sm bg-black text-white p-4 rounded-xl flex items-center justify-between shadow-2xl z-40 animate-in slide-in-from-top-4 border-l-4 border-pink-500"><div className="text-xs"><p className="text-pink-500 font-bold uppercase">Humillación</p><p className="font-bold">{mayorPaliza.winner} <span className="text-gray-400 font-normal">vs</span> {mayorPaliza.loser}</p></div><span className="text-2xl font-black italic">{mayorPaliza.result}</span></div>)}
+        <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2"><button onClick={() => setShowDJ(!showDJ)} className="bg-white text-black p-3 rounded-full shadow-xl border-2 border-gray-100 hover:bg-gray-50 transition">{showDJ ? '✖️' : '🔊'}</button>{showDJ && (<div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xl flex flex-col gap-2 animate-in slide-in-from-bottom-2 mb-2"><SoundBtn label="📢 BOCINA" url="https://www.myinstants.com/media/sounds/mlg-airhorn.mp3" color="bg-red-600" /><SoundBtn label="🎻 VIOLÍN" url="https://www.myinstants.com/media/sounds/sad-violin-airhorn.mp3" color="bg-blue-600" /><SoundBtn label="🦗 GRILLOS" url="https://www.myinstants.com/media/sounds/cricket_1.mp3" color="bg-green-600" /><SoundBtn label="🤬 ABUCHEO" url="https://www.myinstants.com/media/sounds/boo.mp3" color="bg-gray-600" /><SoundBtn label="🐐 SIUUU" url="https://www.myinstants.com/media/sounds/siu.mp3" color="bg-yellow-500" /></div>)}</div>
     </div>
   );
 }
 
 // --- SUBCOMPONENTES ---
+
+function HeroCarousel() {
+    const [current, setCurrent] = useState(0);
+    const slides = [
+        {title: "FOOTYS LEAGUE", subtitle: "Donde nacen las leyendas.", bg: "bg-black"},
+        {title: "APUESTA AHORA", subtitle: "Multiplica tus monedas.", bg: "bg-blue-900"},
+        {title: "RANKING 2025", subtitle: "¿Quién será el MVP?", bg: "bg-purple-900"}
+    ];
+    useEffect(() => { const t = setInterval(() => setCurrent(c => (c + 1) % slides.length), 5000); return () => clearInterval(t); }, []);
+    return (
+        <div className="relative h-48 w-full overflow-hidden bg-black">
+            {slides.map((slide, i) => (
+                <div key={i} className={`absolute inset-0 flex flex-col justify-center px-6 transition-opacity duration-1000 ${slide.bg}`} style={{ opacity: i === current ? 1 : 0 }}>
+                    <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
+                    <h2 className="relative text-3xl md:text-5xl font-black text-white italic tracking-tighter uppercase mb-2">{slide.title}</h2>
+                    <p className="relative text-white/80 text-sm md:text-base font-bold uppercase tracking-widest">{slide.subtitle}</p>
+                </div>
+            ))}
+            <div className="absolute bottom-4 right-4 flex gap-1 z-10">
+                {slides.map((_, i) => (<div key={i} className={`h-1 rounded-full transition-all ${i===current?'w-6 bg-white':'w-2 bg-white/30'}`} />))}
+            </div>
+        </div>
+    )
+}
 
 function MatchCard({ m, onFinish, isFinal, label }: { m?: Match, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean, label?: string }) {
     const [s1, setS1] = useState(""); const [s2, setS2] = useState("");
@@ -594,7 +635,7 @@ function MatchCard({ m, onFinish, isFinal, label }: { m?: Match, onFinish: (id: 
     if (m.isBye) return <div className="bg-green-50 border border-green-100 p-6 rounded-2xl flex flex-col items-center justify-center text-center h-full"><span className="text-green-600 font-bold text-xs uppercase mb-1">Pase Directo</span><p className="font-black text-lg text-green-900">{m.winner}</p></div>;
 
     return (
-        <div className={`relative bg-white border ${m.winner ? 'border-gray-200 opacity-70' : 'border-gray-200 shadow-xl'} p-5 rounded-3xl overflow-hidden transition-all hover:shadow-2xl`}>
+        <div className={`relative bg-white border ${m.winner ? 'border-gray-200 opacity-60' : 'border-gray-200 shadow-xl'} p-5 rounded-3xl overflow-hidden transition-all hover:shadow-2xl`}>
             {label && <div className="absolute top-0 right-0 bg-black text-white text-[9px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wider">{label}</div>}
             
             {/* EQUIPO 1 */}
@@ -606,7 +647,7 @@ function MatchCard({ m, onFinish, isFinal, label }: { m?: Match, onFinish: (id: 
                         <span className="text-blue-500">{m.p1Team}</span>
                     </div>
                 </div>
-                {m.winner ? <span className="font-mono font-black text-2xl text-black">{m.score1}</span> : <input type="number" className="w-12 h-12 bg-gray-50 text-center rounded-xl font-bold text-lg outline-none focus:ring-2 ring-black transition border border-gray-200" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting} />}
+                {m.winner ? <span className="font-mono font-black text-2xl text-black">{m.score1}</span> : <input type="number" className="w-12 h-12 bg-white text-center rounded-xl font-bold text-lg outline-none focus:border-black transition border-2 border-gray-100 text-black" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting} />}
             </div>
 
             {/* DIVIDER */}
@@ -621,12 +662,17 @@ function MatchCard({ m, onFinish, isFinal, label }: { m?: Match, onFinish: (id: 
                         <span className="text-blue-500">{m.p2Team}</span>
                     </div>
                 </div>
-                {m.winner ? <span className="font-mono font-black text-2xl text-black">{m.score2}</span> : <input type="number" className="w-12 h-12 bg-gray-50 text-center rounded-xl font-bold text-lg outline-none focus:ring-2 ring-black transition border border-gray-200" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} />}
+                {m.winner ? <span className="font-mono font-black text-2xl text-black">{m.score2}</span> : <input type="number" className="w-12 h-12 bg-white text-center rounded-xl font-bold text-lg outline-none focus:border-black transition border-2 border-gray-100 text-black" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} />}
             </div>
 
             {!m.winner && !isWaiting && (
-                <button onClick={()=>s1&&s2&&onFinish(m.id, +s1, +s2)} className="w-full bg-black text-white text-xs font-bold py-3 rounded-xl hover:bg-gray-800 transition shadow-lg transform active:scale-95">FINALIZAR PARTIDO</button>
+                <button onClick={()=>s1&&s2&&onFinish(m.id, +s1, +s2)} className="w-full bg-black text-white text-xs font-bold py-3 rounded-xl hover:bg-gray-800 transition shadow-lg transform active:scale-95 uppercase tracking-widest">FINALIZAR PARTIDO</button>
             )}
         </div>
     );
+}
+
+function SoundBtn({ label, url, color }: { label: string, url: string, color: string }) {
+    const play = () => { const audio = new Audio(url); audio.play().catch(e => console.log("Error audio:", e)); };
+    return (<button onClick={play} className={`${color} text-white text-[10px] font-bold py-2 px-3 rounded-lg shadow hover:brightness-110 active:scale-95 whitespace-nowrap uppercase tracking-wider`}>{label}</button>);
 }
