@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/lib/context';
 import { db } from '@/lib/firebase';
 import { doc, addDoc, collection, setDoc, increment, serverTimestamp } from 'firebase/firestore';
-import { ShoppingCart, Shield, Ban, Skull, ChevronLeft, Lock } from 'lucide-react';
+import { ShoppingCart, Shield, ArrowRightLeft, Skull, ChevronLeft, Lock } from 'lucide-react'; // He añadido ArrowRightLeft
 import Link from 'next/link';
 
 export default function TiendaPage() {
@@ -19,11 +19,11 @@ export default function TiendaPage() {
       color: 'bg-blue-50 border-blue-200 text-blue-700'
     },
     {
-      id: 'veto',
-      name: '⭐ Veto VIP',
+      id: 'swap', // ANTES ERA VETO
+      name: '🔄 El Cambiazo',
       price: 500,
-      desc: 'Tu rival NO puede elegir equipos de 5 estrellas (Adiós City/Madrid).',
-      color: 'bg-yellow-50 border-yellow-200 text-yellow-700'
+      desc: '¿Tu rival tiene al City y tú al PSV? Cómpralo y os INTERCAMBIÁIS los equipos.',
+      color: 'bg-purple-50 border-purple-200 text-purple-700'
     },
     {
       id: 'injury',
@@ -43,13 +43,10 @@ export default function TiendaPage() {
     if (!confirm(confirmMsg)) return;
 
     try {
-      // 1. Cobrar
       await setDoc(doc(db, "users", user.id), { balance: increment(-item.price) }, { merge: true });
-      
-      // 2. Registrar ventaja
       await addDoc(collection(db, "powerups"), {
         buyer: user.id,
-        matchId: parseInt(selectedMatchId), // Aseguramos que sea número para coincidir con el torneo
+        matchId: parseInt(selectedMatchId),
         type: item.id,
         name: item.name,
         timestamp: serverTimestamp()
@@ -62,18 +59,13 @@ export default function TiendaPage() {
     }
   };
 
-  // Filtrar mis partidos pendientes
-  // Usamos useMemo para que no recargue constantemente
   const myMatches = useMemo(() => {
       if (!user || !matches) return [];
       return matches.filter((m:any) => 
-        !m.winner && // Que no haya acabado
-        !m.isBye && // Que no sea un pase directo
-        (m.p1 === user.id || m.p2 === user.id) // Que sea YO uno de los jugadores
+        !m.winner && !m.isBye && (m.p1 === user.id || m.p2 === user.id)
       );
   }, [matches, user]);
 
-  // Si no hay usuario cargado aún, mostramos pantalla de carga o aviso
   if (!user) {
       return (
           <div className="min-h-screen bg-white flex flex-col items-center justify-center p-10 text-black">
@@ -85,17 +77,13 @@ export default function TiendaPage() {
   }
 
   return (
-    // "min-h-screen bg-white text-black" fuerza que la pantalla sea blanca y el texto negro siempre
     <div className="min-h-screen bg-white text-black pb-24">
         <div className="max-w-md mx-auto p-4 space-y-6">
-            
-            {/* CABECERA */}
             <div className="flex items-center gap-2 mb-6 pt-4">
                 <Link href="/torneo" className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition"><ChevronLeft size={20}/></Link>
                 <h1 className="text-2xl font-black italic uppercase">Mercado <span className="text-red-600">Negro</span></h1>
             </div>
 
-            {/* SALDO */}
             <div className="bg-black text-white p-6 rounded-3xl shadow-xl flex justify-between items-center relative overflow-hidden">
                 <div className="z-10">
                     <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Tu Dinero Sucio</p>
@@ -104,40 +92,25 @@ export default function TiendaPage() {
                 <ShoppingCart size={48} className="opacity-20 absolute -right-4 -bottom-4 text-white"/>
             </div>
 
-            {/* SELECTOR DE PARTIDO */}
             <div className="bg-gray-50 p-5 rounded-2xl border-2 border-gray-100">
                 <label className="text-[10px] font-black uppercase text-gray-400 mb-2 block tracking-widest">1. ¿Dónde quieres hacer trampa?</label>
                 {myMatches.length > 0 ? (
-                    <select 
-                        className="w-full p-4 bg-white rounded-xl font-bold text-sm outline-none border-2 border-gray-200 focus:border-black transition" 
-                        onChange={e => setSelectedMatchId(e.target.value)}
-                        value={selectedMatchId}
-                    >
+                    <select className="w-full p-4 bg-white rounded-xl font-bold text-sm outline-none border-2 border-gray-200 focus:border-black transition" onChange={e => setSelectedMatchId(e.target.value)} value={selectedMatchId}>
                         <option value="">👇 Selecciona un partido</option>
-                        {myMatches.map((m:any) => (
-                            <option key={m.id} value={m.id}>{m.p1} vs {m.p2}</option>
-                        ))}
+                        {myMatches.map((m:any) => (<option key={m.id} value={m.id}>{m.p1} vs {m.p2}</option>))}
                     </select>
                 ) : (
-                    <div className="text-center p-4 bg-white rounded-xl border border-dashed border-gray-300">
-                        <p className="text-xs text-gray-400 italic">No tienes partidos pendientes en el torneo.</p>
-                    </div>
+                    <div className="text-center p-4 bg-white rounded-xl border border-dashed border-gray-300"><p className="text-xs text-gray-400 italic">No tienes partidos pendientes.</p></div>
                 )}
             </div>
 
-            {/* LISTA DE ITEMS */}
             <div className="space-y-4">
                 <label className="text-[10px] font-black uppercase text-gray-400 pl-2 tracking-widest">2. Elige tu ventaja</label>
                 {items.map((item) => (
-                    <button 
-                        key={item.id} 
-                        onClick={() => comprarVentaja(item)}
-                        disabled={!selectedMatchId}
-                        className={`w-full text-left p-5 rounded-2xl border-2 transition-all active:scale-[0.98] flex justify-between items-center group ${item.color} ${!selectedMatchId ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:shadow-lg bg-white'}`}
-                    >
+                    <button key={item.id} onClick={() => comprarVentaja(item)} disabled={!selectedMatchId} className={`w-full text-left p-5 rounded-2xl border-2 transition-all active:scale-[0.98] flex justify-between items-center group ${item.color} ${!selectedMatchId ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:shadow-lg bg-white'}`}>
                         <div className="w-3/4 pr-4">
                             <div className="flex items-center gap-2 mb-1">
-                                {item.id === 'veto' && <Ban size={18}/>}
+                                {item.id === 'swap' && <ArrowRightLeft size={18}/>}
                                 {item.id === 'injury' && <Skull size={18}/>}
                                 {item.id === 'insurance' && <Shield size={18}/>}
                                 <h3 className="font-black text-sm uppercase">{item.name}</h3>
