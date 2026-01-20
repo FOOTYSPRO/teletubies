@@ -42,7 +42,7 @@ export default function Home() {
   const [gameMode, setGameMode] = useState<'1vs1' | '2vs2'>('1vs1');
   const [mayorPaliza, setMayorPaliza] = useState<{winner: string, loser: string, diff: number, result: string} | null>(null);
   
-  // FORMULARIOS LOGIN/REGISTRO
+  // FORMULARIOS
   const [loginName, setLoginName] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [regName, setRegName] = useState("");
@@ -123,7 +123,7 @@ export default function Home() {
       setRegName(""); setRegClub(""); setRegPass("");
   };
 
-  const logout = () => setCurrentUser(null);
+  const logout = () => { setCurrentUser(null); setShowSettings(false); };
 
   // --- TORNEO ---
   const togglePlayerSelection = (name: string) => {
@@ -253,7 +253,6 @@ export default function Home() {
   const calcularPaliza = (matches: Match[]) => { 
       let maxDiff=0; let p=null; 
       matches.forEach(m=>{
-          // CORRECCIÓN AQUÍ: Comprobar score1 Y score2
           if(m.winner && m.score1!==undefined && m.score2!==undefined){
               const d=Math.abs(m.score1-m.score2);
               if(d>=3 && d>maxDiff){
@@ -270,67 +269,101 @@ export default function Home() {
   const lanzarFiesta = () => { confetti({particleCount:150}); const a=new Audio("/gol.mp3"); a.volume=0.5; a.play().catch(()=>{}); };
   const startTimer = (s: number) => { setTimeLeft(s); setTimerActive(true); };
   const generarExcusa = () => setExcusa(EXCUSAS[Math.floor(Math.random() * EXCUSAS.length)]);
-  const limpiarPizarra = async () => { await writeBatch(db).set(doc(db,"sala","principal"),{equipoA:[],equipoB:[],fifaMatches:[],ultimoCastigo:"..."}).commit(); alert("Pizarra Limpia"); setShowSettings(false); };
-  const borrarTodo = async () => { if(!confirm("⚠️ ¿BORRAR TODO?")) return; const b=writeBatch(db); (await getDocs(query(collection(db,"ranking")))).forEach(d=>b.delete(d.ref)); (await getDocs(query(collection(db,"history")))).forEach(d=>b.delete(d.ref)); b.set(doc(db,"sala","principal"),{equipoA:[],equipoB:[],fifaMatches:[],ultimoCastigo:"..."}); await b.commit(); alert("Borrado Total"); setShowSettings(false); };
+  
+  const limpiarPizarra = async () => { 
+      if(!confirm("¿Seguro que quieres empezar un torneo nuevo? Se borrará el cuadro actual.")) return;
+      const batch = writeBatch(db);
+      // Limpiamos los equipos, el cuadro y los castigos, PERO NO EL RANKING NI USUARIOS
+      batch.set(doc(db,"sala","principal"),{equipoA:[],equipoB:[],fifaMatches:[],ultimoCastigo:"..."}); 
+      
+      // Limpiamos solo las apuestas pendientes, para que no se queden colgadas
+      const qBets = query(collection(db, "bets"));
+      const betsSnap = await getDocs(qBets);
+      betsSnap.forEach((d) => batch.delete(d.ref));
+
+      await batch.commit(); 
+      alert("¡Torneo Nuevo Listo!"); 
+      setShowSettings(false); 
+  };
 
   useEffect(() => { if(timerActive && timeLeft>0){timerRef.current=setTimeout(()=>setTimeLeft(timeLeft-1),1000)}else if(timeLeft===0&&timerActive){setTimerActive(false);new Audio("https://www.myinstants.com/media/sounds/ding-sound-effect_2.mp3").play().catch(()=>{})}; return()=>clearTimeout(timerRef.current!)},[timeLeft,timerActive]);
 
   return (
     <main className="min-h-screen bg-neutral-950 text-white font-sans pb-32 overflow-x-hidden select-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-neutral-950 to-black">
       
-      {/* HEADER APP */}
-      <header className="fixed top-0 w-full bg-black/80 backdrop-blur-md z-50 border-b border-white/10 px-4 py-3 flex justify-between items-center h-16">
-        <h1 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600 italic tracking-tighter">
-            TELETUBIES LIGA
-        </h1>
+      {/* --- APP HEADER COMPACTO --- */}
+      <header className="fixed top-0 w-full bg-black/90 backdrop-blur-md z-50 border-b border-white/10 px-4 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+            <span className="text-2xl">🏆</span>
+            <h1 className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600 italic tracking-tighter">
+                TELETUBIES
+            </h1>
+        </div>
+        
         <div className="flex items-center gap-3">
-            {currentUser && <div className="text-xs text-right"><p className="font-bold text-white">{currentUser.id}</p><p className="text-yellow-400 font-mono">{currentUser.balance} 💰</p></div>}
+            {currentUser && (
+                <div className="text-right leading-tight">
+                    <p className="font-bold text-white text-xs">{currentUser.id}</p>
+                    <p className="text-yellow-400 font-mono text-xs">{currentUser.balance} 💰</p>
+                </div>
+            )}
+            {/* BOTÓN SETTINGS (SOLO ENGRANAJE) */}
             <button onClick={() => setShowSettings(!showSettings)} className="p-2 bg-neutral-800 rounded-full text-gray-400 hover:text-white transition">⚙️</button>
         </div>
       </header>
 
-      {/* SETTINGS MODAL */}
+      {/* --- MENÚ AJUSTES (MODAL) --- */}
       {showSettings && (
-          <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4" onClick={()=>setShowSettings(false)}>
-              <div className="bg-neutral-900 border border-gray-700 p-6 rounded-2xl w-full max-w-sm space-y-4" onClick={e=>e.stopPropagation()}>
-                  <h3 className="text-xl font-bold text-white mb-2">Ajustes de Admin</h3>
-                  <button onClick={limpiarPizarra} className="w-full bg-neutral-700 hover:bg-neutral-600 text-white p-3 rounded-xl flex items-center justify-center gap-2">🔄 Limpiar Torneo Actual</button>
-                  <button onClick={borrarTodo} className="w-full bg-red-900/50 hover:bg-red-900 text-red-200 p-3 rounded-xl flex items-center justify-center gap-2">⛔ Borrar Ranking y Datos</button>
-                  {currentUser && <button onClick={logout} className="w-full border border-gray-600 text-gray-400 p-3 rounded-xl">Cerrar Sesión</button>}
-                  <button onClick={()=>setShowSettings(false)} className="w-full text-center text-gray-500 text-sm mt-2">Cerrar</button>
+          <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4 animate-in fade-in" onClick={()=>setShowSettings(false)}>
+              <div className="bg-neutral-900 border border-gray-700 p-6 rounded-2xl w-full max-w-xs space-y-3 shadow-2xl" onClick={e=>e.stopPropagation()}>
+                  <h3 className="text-lg font-bold text-white mb-2 text-center">Menú de Gestión</h3>
+                  
+                  {/* SOLO UN BOTÓN DE RESET */}
+                  <button onClick={limpiarPizarra} className="w-full bg-blue-600 hover:bg-blue-500 text-white p-3 rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg">
+                      🔄 Empezar Nuevo Torneo
+                  </button>
+                  
+                  {currentUser && (
+                      <button onClick={logout} className="w-full bg-neutral-800 border border-gray-600 text-gray-300 hover:text-white p-3 rounded-xl flex items-center justify-center gap-2 mt-4">
+                          Cerrar Sesión
+                      </button>
+                  )}
+                  
+                  <button onClick={()=>setShowSettings(false)} className="w-full text-center text-gray-500 text-sm mt-2 p-2">Cancelar</button>
               </div>
           </div>
       )}
 
-      <div className="pt-20 max-w-4xl mx-auto p-4 md:p-6 min-h-screen">
+      {/* PADDING TOP AJUSTADO (pt-24) PARA QUE NO SE CORTE NADA */}
+      <div className="pt-24 max-w-4xl mx-auto p-4 md:p-6 min-h-screen">
         
-        {/* PERFIL (LOGIN / DASHBOARD) */}
+        {/* PERFIL */}
         {activeTab === 'perfil' && (
-            <div className="space-y-6">
+            <div className="space-y-6 animate-in slide-in-from-bottom-4">
                 {!currentUser ? (
                     <div className="max-w-sm mx-auto bg-neutral-900/50 p-8 rounded-3xl border border-white/10 shadow-2xl">
                         {!isRegistering ? (
                             <>
                                 <h2 className="text-2xl font-black text-center mb-6 text-blue-400">INICIAR SESIÓN</h2>
-                                <input type="text" placeholder="Usuario" className="w-full bg-black/50 p-4 rounded-xl border border-gray-700 mb-3 text-white" value={loginName} onChange={e=>setLoginName(e.target.value)} />
-                                <input type="password" placeholder="Contraseña" className="w-full bg-black/50 p-4 rounded-xl border border-gray-700 mb-6 text-white" value={loginPass} onChange={e=>setLoginPass(e.target.value)} />
-                                <button onClick={handleLogin} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold p-4 rounded-xl shadow-lg shadow-blue-900/20 mb-4">ENTRAR</button>
+                                <input type="text" placeholder="Usuario" className="w-full bg-black/50 p-4 rounded-xl border border-gray-700 mb-3 text-white focus:outline-none focus:border-blue-500 transition" value={loginName} onChange={e=>setLoginName(e.target.value)} />
+                                <input type="password" placeholder="Contraseña" className="w-full bg-black/50 p-4 rounded-xl border border-gray-700 mb-6 text-white focus:outline-none focus:border-blue-500 transition" value={loginPass} onChange={e=>setLoginPass(e.target.value)} />
+                                <button onClick={handleLogin} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold p-4 rounded-xl shadow-lg shadow-blue-900/20 mb-4 transition transform active:scale-95">ENTRAR</button>
                                 <p className="text-center text-gray-500 text-sm">¿No tienes cuenta? <button onClick={()=>setIsRegistering(true)} className="text-white underline">Regístrate</button></p>
                             </>
                         ) : (
                             <>
                                 <h2 className="text-2xl font-black text-center mb-6 text-purple-400">CREAR FICHAJE</h2>
-                                <input type="text" placeholder="Nombre" className="w-full bg-black/50 p-4 rounded-xl border border-gray-700 mb-3" value={regName} onChange={e=>setRegName(e.target.value)} />
-                                <input type="text" placeholder="Nombre Club (ej: Aston Birra)" className="w-full bg-black/50 p-4 rounded-xl border border-gray-700 mb-3" value={regClub} onChange={e=>setRegClub(e.target.value)} />
-                                <input type="password" placeholder="Contraseña" className="w-full bg-black/50 p-4 rounded-xl border border-gray-700 mb-6" value={regPass} onChange={e=>setRegPass(e.target.value)} />
-                                <button onClick={handleRegister} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold p-4 rounded-xl shadow-lg mb-4">FIRMAR CONTRATO</button>
+                                <input type="text" placeholder="Nombre" className="w-full bg-black/50 p-4 rounded-xl border border-gray-700 mb-3 text-white" value={regName} onChange={e=>setRegName(e.target.value)} />
+                                <input type="text" placeholder="Nombre Club (ej: Aston Birra)" className="w-full bg-black/50 p-4 rounded-xl border border-gray-700 mb-3 text-white" value={regClub} onChange={e=>setRegClub(e.target.value)} />
+                                <input type="password" placeholder="Contraseña" className="w-full bg-black/50 p-4 rounded-xl border border-gray-700 mb-6 text-white" value={regPass} onChange={e=>setRegPass(e.target.value)} />
+                                <button onClick={handleRegister} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold p-4 rounded-xl shadow-lg mb-4 transition transform active:scale-95">FIRMAR CONTRATO</button>
                                 <p className="text-center text-gray-500 text-sm"><button onClick={()=>setIsRegistering(false)} className="text-white">Volver al login</button></p>
                             </>
                         )}
                     </div>
                 ) : (
                     <div className="space-y-6">
-                        <div className="bg-gradient-to-br from-blue-900/40 to-purple-900/40 p-6 rounded-3xl border border-white/10 flex items-center justify-between">
+                        <div className="bg-gradient-to-br from-blue-900/40 to-purple-900/40 p-6 rounded-3xl border border-white/10 flex items-center justify-between shadow-lg">
                             <div><h2 className="text-3xl font-black text-white">{currentUser.id}</h2><p className="text-blue-300 font-bold">{currentUser.clubName}</p></div>
                             <div className="text-right"><p className="text-xs text-gray-400 uppercase tracking-widest">Saldo Actual</p><p className="text-4xl font-mono font-black text-yellow-400">{currentUser.balance}</p></div>
                         </div>
@@ -342,12 +375,12 @@ export default function Home() {
                             <h3 className="font-bold text-gray-400 mb-4">Tus Últimas Apuestas</h3>
                             <div className="space-y-2">
                                 {activeBets.filter(b => b.bettor === currentUser.id).map(b => (
-                                    <div key={b.id} className="flex justify-between items-center text-sm p-2 bg-black/20 rounded-lg">
-                                        <span>Apuesta a <span className="text-blue-300">{b.chosenWinner}</span></span>
+                                    <div key={b.id} className="flex justify-between items-center text-sm p-3 bg-black/20 rounded-xl border border-white/5">
+                                        <span>Apuesta a <span className="text-blue-300 font-bold">{b.chosenWinner}</span></span>
                                         <span className={`font-bold ${b.status==='won'?'text-green-400':b.status==='lost'?'text-red-500':'text-yellow-500'}`}>{b.status==='won' ? `+${b.amount*2}` : b.status==='lost' ? `-${b.amount}` : 'Pendiente'}</span>
                                     </div>
                                 ))}
-                                {activeBets.filter(b => b.bettor === currentUser.id).length === 0 && <p className="text-gray-500 text-xs">No has apostado aún.</p>}
+                                {activeBets.filter(b => b.bettor === currentUser.id).length === 0 && <p className="text-gray-500 text-xs text-center py-4">No has apostado aún.</p>}
                             </div>
                         </div>
                     </div>
@@ -357,7 +390,7 @@ export default function Home() {
 
         {/* FIFA */}
         {activeTab === 'fifa' && (
-            <section>
+            <section className="animate-in slide-in-from-bottom-4">
                 {fifaMatches.length === 0 && (
                     <div className="bg-neutral-900/40 p-6 rounded-3xl border border-green-500/20 mb-8">
                         <div className="flex justify-between items-center mb-4">
@@ -374,12 +407,12 @@ export default function Home() {
                                 </button>
                             ))}
                         </div>
-                        <button onClick={handleCrearTorneo} className="w-full bg-green-600 text-white font-black py-4 rounded-xl shadow-lg">🏆 CREAR CUADRO ({selectedPlayers.length})</button>
+                        <button onClick={handleCrearTorneo} className="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 rounded-xl shadow-lg transition transform active:scale-95">🏆 CREAR CUADRO ({selectedPlayers.length})</button>
                     </div>
                 )}
 
                 {fifaMatches.length > 0 && (
-                    <div className="w-full pb-20">
+                    <div className="w-full pb-24">
                         <div className="md:hidden flex flex-col gap-6">
                             <h3 className="text-center font-bold text-gray-500 text-xs tracking-widest uppercase">Ronda 1</h3>
                             {(fifaMatches.length===4 ? [0,1] : [0,1,2,3]).map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}
@@ -401,8 +434,8 @@ export default function Home() {
 
         {/* APUESTAS */}
         {activeTab === 'apuestas' && (
-            <div className="max-w-xl mx-auto space-y-6">
-                {!currentUser ? <div className="text-center p-10 text-gray-500">Inicia sesión en tu perfil para apostar.</div> : (
+            <div className="max-w-xl mx-auto space-y-6 animate-in slide-in-from-bottom-4">
+                {!currentUser ? <div className="text-center p-10 text-gray-500 bg-neutral-900/30 rounded-3xl border border-white/5">🔒 Inicia sesión en tu perfil para apostar.</div> : (
                     <>
                         <div className="bg-black/60 border border-yellow-500/30 p-6 rounded-3xl">
                             <div className="flex justify-between items-center mb-4">
@@ -422,13 +455,13 @@ export default function Home() {
                                         </div>
                                     )}
                                     <div className="flex items-center gap-2"><span className="text-xl">💰</span><input type="number" className="flex-1 bg-neutral-800 p-3 rounded-xl border border-gray-600 text-white" value={betAmount} onChange={e=>setBetAmount(parseInt(e.target.value))} /></div>
-                                    <button onClick={realizarApuesta} className="w-full bg-yellow-600 text-black font-black p-4 rounded-xl shadow-lg">CONFIRMAR APUESTA</button>
+                                    <button onClick={realizarApuesta} className="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-black p-4 rounded-xl shadow-lg transition transform active:scale-95">CONFIRMAR APUESTA</button>
                                 </div>
                             ) : (<p className="text-center text-gray-500">No hay partidos activos.</p>)}
                         </div>
                         <div>
                             <h3 className="font-bold text-gray-400 uppercase text-xs mb-2">Apuestas Globales</h3>
-                            <div className="space-y-2">{activeBets.filter(b => b.status === 'pending').map(b => (<div key={b.id} className="bg-neutral-900/50 p-3 rounded-xl border border-white/5 flex justify-between items-center"><div><span className="font-bold text-yellow-400">{b.bettor}</span> vs <span className="font-bold text-blue-400">{b.chosenWinner}</span></div><span className="font-mono">{b.amount} 💰</span></div>))}{activeBets.filter(b => b.status === 'pending').length === 0 && <p className="text-gray-600 text-sm">Sin apuestas activas.</p>}</div>
+                            <div className="space-y-2">{activeBets.filter(b => b.status === 'pending').map(b => (<div key={b.id} className="bg-neutral-900/50 p-3 rounded-xl border border-white/5 flex justify-between items-center"><div><span className="font-bold text-yellow-400">{b.bettor}</span> vs <span className="font-bold text-blue-400">{b.chosenWinner}</span></div><span className="font-mono">{b.amount} 💰</span></div>))}{activeBets.filter(b => b.status === 'pending').length === 0 && <p className="text-gray-600 text-sm text-center">Sin apuestas activas.</p>}</div>
                         </div>
                     </>
                 )}
@@ -444,7 +477,7 @@ export default function Home() {
       </div>
 
       {/* EXTRAS */}
-      {mayorPaliza && (<div className="fixed top-20 left-1/2 -translate-x-1/2 w-11/12 max-w-sm bg-gradient-to-r from-pink-950 to-red-950 border border-pink-500 p-4 rounded-xl flex items-center justify-between shadow-2xl z-40"><div className="text-xs"><p className="text-pink-400 font-bold">PALIZA</p><p>{mayorPaliza.winner} humilló a {mayorPaliza.loser}</p></div><span className="text-xl font-black">{mayorPaliza.result}</span></div>)}
+      {mayorPaliza && (<div className="fixed top-24 left-1/2 -translate-x-1/2 w-11/12 max-w-sm bg-gradient-to-r from-pink-950 to-red-950 border border-pink-500 p-4 rounded-xl flex items-center justify-between shadow-2xl z-40 animate-in zoom-in"><div className="text-xs"><p className="text-pink-400 font-bold">PALIZA</p><p>{mayorPaliza.winner} humilló a {mayorPaliza.loser}</p></div><span className="text-xl font-black">{mayorPaliza.result}</span></div>)}
       <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2"><button onClick={() => setShowDJ(!showDJ)} className="bg-purple-600 text-white p-3 rounded-full shadow-2xl border-2 border-white/20">{showDJ ? '✖️' : '🔊'}</button>{showDJ && (<div className="bg-black/90 p-4 rounded-2xl border border-purple-500/30 backdrop-blur-md mb-2 flex flex-col gap-2"><SoundBtn label="📢 BOCINA" url="https://www.myinstants.com/media/sounds/mlg-airhorn.mp3" color="bg-red-600" /><SoundBtn label="🎻 VIOLÍN" url="https://www.myinstants.com/media/sounds/sad-violin-airhorn.mp3" color="bg-blue-600" /><SoundBtn label="🦗 GRILLOS" url="https://www.myinstants.com/media/sounds/cricket_1.mp3" color="bg-green-600" /><SoundBtn label="👏 APLAUSO" url="https://www.myinstants.com/media/sounds/aplausos_1.mp3" color="bg-yellow-600" /><SoundBtn label="😡 BUUU" url="https://www.myinstants.com/media/sounds/boo.mp3" color="bg-gray-600" /><SoundBtn label="🐐 SIUUU" url="https://www.myinstants.com/media/sounds/siu.mp3" color="bg-neutral-800" /></div>)}</div>
 
       {/* DOCK */}
