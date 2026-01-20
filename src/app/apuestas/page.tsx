@@ -3,10 +3,9 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/lib/context';
 import { db } from '@/lib/firebase';
 import { doc, addDoc, collection, setDoc, increment, serverTimestamp } from 'firebase/firestore';
-import { Lock, Coins, Crown, TrendingDown, Zap, CheckCheck, Layers, Calculator } from 'lucide-react';
+import { Lock, Coins, Crown, TrendingDown, Zap, CheckCheck, Layers, Calculator, Ban, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
-// 🔥 LIQUIDEZ (Cuanto más bajo, más rápido cambian las cuotas)
 const LIQUIDITY = 50; 
 
 export default function ApuestasPage() {
@@ -18,14 +17,30 @@ export default function ApuestasPage() {
 
   const richest = useMemo(() => users.length ? [...users].sort((a,b) => b.balance - a.balance)[0] : null, [users]);
   const poorest = useMemo(() => users.length ? [...users].sort((a,b) => a.balance - b.balance)[0] : null, [users]);
+  
+  // Filtros
   const pendingBets = activeBets.filter((b:any) => b.status === 'pending');
-  const globalHistory = activeBets.filter((b:any) => b.status !== 'pending').sort((a:any, b:any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+  
+  // HISTORIAL: Ordenado por fecha descendente (lo más nuevo arriba)
+  const globalHistory = activeBets
+    .filter((b:any) => b.status === 'won' || b.status === 'lost')
+    .sort((a:any, b:any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+
+  // --- DETECCIÓN DE JUGADOR EN EL PARTIDO ---
+  const currentMatch = matches.find((m:any) => m.id === selectedMatchId);
+  const isUserPlaying = useMemo(() => {
+      if (!currentMatch || !user) return false;
+      const p1 = currentMatch.p1 || "";
+      const p2 = currentMatch.p2 || "";
+      // Comprueba si el usuario es P1, P2 o parte de un equipo "Jorge & Pepe"
+      return p1 === user.id || p2 === user.id || p1.includes(user.id) || p2.includes(user.id);
+  }, [currentMatch, user]);
 
   // --- CUOTAS DINÁMICAS ---
   const getOddsInfo = (matchId: number, target: string, currentMarket: string) => {
       const marketBets = activeBets.filter((b:any) => b.matchId === matchId && b.type === currentMarket && b.status === 'pending');
-      const realTotalPool = marketBets.reduce((acc: number, b:any) => acc + b.amount, 0); 
-      const realTargetPool = marketBets.filter((b:any) => b.chosenWinner === target).reduce((acc: number, b:any) => acc + b.amount, 0); 
+      const realTotalPool = marketBets.reduce((acc: number, b:any) => acc + (Number(b.amount)||0), 0); 
+      const realTargetPool = marketBets.filter((b:any) => b.chosenWinner === target).reduce((acc: number, b:any) => acc + (Number(b.amount)||0), 0); 
       
       const virtualTotal = realTotalPool + (LIQUIDITY * 2);
       const virtualTarget = realTargetPool + LIQUIDITY;
@@ -39,10 +54,9 @@ export default function ApuestasPage() {
   };
 
   const toggleSelection = (type: 'winner'|'goals', value: string) => {
-      if (!selectedMatchId) return;
+      if (!selectedMatchId || isUserPlaying) return; // Bloqueo extra
       const { odd } = getOddsInfo(selectedMatchId, value, type);
       const exists = selections.find(s => s.type === type && s.value === value);
-      
       if (exists) {
           setSelections(selections.filter(s => !(s.type === type && s.value === value)));
       } else {
@@ -63,36 +77,57 @@ export default function ApuestasPage() {
 
   const realizarApuesta = async () => {
       if (!user) return;
+      if (isUserPlaying) return alert("⛔ No puedes apostar en tu propio partido.");
       if (selectedMatchId === null || selections.length === 0 || betAmount <= 0) return alert("Selecciona algo y pon pasta.");
       if (user.balance < betAmount) return alert(`No tienes ${betAmount}€.`);
 
       try {
           await setDoc(doc(db, "users", user.id), { balance: increment(-betAmount) }, { merge: true });
           await addDoc(collection(db, "bets"), { 
-              matchId: selectedMatchId, bettor: user.id, type: 'combined', selections: selections, amount: betAmount, finalOdd: totalOdd, status: 'pending', timestamp: serverTimestamp() 
+              matchId: selectedMatchId, 
+              bettor: user.id, 
+              type: 'combined', 
+              selections: selections, 
+              amount: betAmount, 
+              finalOdd: totalOdd, 
+              status: 'pending', 
+              timestamp: serverTimestamp() 
           });
           alert(`✅ Apuesta realizada (x${totalOdd})`); setSelections([]); setActiveTab('active');
       } catch (e) { alert("Error al apostar"); }
   };
 
-  if (!user) return <div className="text-center p-12 mt-10"><Lock size={48} className="mx-auto text-gray-300"/><p className="text-gray-500 font-bold mt-4">Identifícate primero.</p><Link href="/perfil" className="underline font-bold">Ir al Perfil</Link></div>;
-  const currentMatch = matches.find((m:any) => m.id === selectedMatchId);
-
-  // STATS
+  // --- 🔥 CÁLCULO DE RANKING ROBUSTO ---
   const bettingStats = useMemo(() => {
       const stats: any = {};
+      
+      // Recorremos TODAS las apuestas, no solo las pendientes
       activeBets.forEach((b: any) => {
+          // Solo contamos apuestas finalizadas para el profit
           if (b.status === 'pending') return;
+
           if (!stats[b.bettor]) stats[b.bettor] = { name: b.bettor, profit: 0, wins: 0, total: 0 };
+          
           stats[b.bettor].total++;
+          const amount = Number(b.amount) || 0;
+
           if (b.status === 'won') {
               stats[b.bettor].wins++;
-              const odd = b.finalOdd ? parseFloat(b.finalOdd) : 2.0;
-              stats[b.bettor].profit += (b.amount * odd) - b.amount;
-          } else { stats[b.bettor].profit -= b.amount; }
+              // Profit Neto = (Apostado * Cuota) - Apostado
+              const finalOdd = parseFloat(b.finalOdd || '1.0');
+              const grossWin = amount * finalOdd;
+              stats[b.bettor].profit += (grossWin - amount);
+          } else if (b.status === 'lost') {
+              // Profit Neto = -Apostado
+              stats[b.bettor].profit -= amount;
+          }
       });
+
+      // Convertir a array y ordenar
       return Object.values(stats).sort((a:any, b:any) => b.profit - a.profit);
   }, [activeBets]);
+
+  if (!user) return <div className="text-center p-12 mt-10"><Lock size={48} className="mx-auto text-gray-300"/><p className="text-gray-500 font-bold mt-4">Identifícate primero.</p><Link href="/perfil" className="underline font-bold">Ir al Perfil</Link></div>;
 
   return (
       <div className="space-y-6 max-w-xl mx-auto animate-in fade-in pb-24 px-4">
@@ -111,9 +146,19 @@ export default function ApuestasPage() {
                           {matches.filter((m:any) => !m.winner && !m.isBye && m.p1 !== "Esperando...").map((m:any) => (<option key={m.id} value={m.id}>{m.p1} vs {m.p2}</option>))}
                       </select>
 
-                      {currentMatch && (
+                      {/* --- AVISO SI JUEGAS TÚ --- */}
+                      {isUserPlaying && (
+                          <div className="bg-red-50 border-2 border-red-100 p-4 rounded-2xl flex items-center gap-3 animate-pulse">
+                              <Ban className="text-red-500" size={24} />
+                              <div>
+                                  <p className="text-red-800 font-black text-xs uppercase">Conflicto de intereses</p>
+                                  <p className="text-red-600 text-[10px] font-bold">No puedes apostar en un partido donde juegas.</p>
+                              </div>
+                          </div>
+                      )}
+
+                      {currentMatch && !isUserPlaying && (
                           <div className="animate-in slide-in-from-bottom-4 space-y-6">
-                              {/* GANADOR */}
                               <div>
                                   <div className="flex justify-between items-center mb-2"><h3 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1"><Layers size={12}/> Ganador</h3><span className="text-[9px] bg-gray-100 px-2 rounded text-gray-400">Pool: {getOddsInfo(currentMatch.id, currentMatch.p1, 'winner').totalPool}€</span></div>
                                   <div className="grid grid-cols-2 gap-3">
@@ -122,9 +167,8 @@ export default function ApuestasPage() {
                                   </div>
                               </div>
                               
-                              {/* --- GOLES (SOLO 4.5) --- */}
                               <div>
-                                  <div className="flex justify-between items-center mb-2"><h3 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1"><Layers size={12}/> Goles (+/- 4.5)</h3><span className="text-[9px] bg-gray-100 px-2 rounded text-gray-400">Pool: {getOddsInfo(currentMatch.id, 'Mas de 4.5', 'goals').totalPool}€</span></div>
+                                  <div className="flex justify-between items-center mb-2"><h3 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1"><Layers size={12}/> Goles (Solo 4.5)</h3><span className="text-[9px] bg-gray-100 px-2 rounded text-gray-400">Pool: {getOddsInfo(currentMatch.id, 'Mas de 4.5', 'goals').totalPool}€</span></div>
                                   <div className="grid grid-cols-2 gap-2">
                                       <OddBtn target="Mas de 4.5" odd={getOddsInfo(currentMatch.id, 'Mas de 4.5', 'goals').odd} active={isSelected('goals', 'Mas de 4.5')} onClick={()=>toggleSelection('goals', 'Mas de 4.5')} />
                                       <OddBtn target="Menos de 4.5" odd={getOddsInfo(currentMatch.id, 'Menos de 4.5', 'goals').odd} active={isSelected('goals', 'Menos de 4.5')} onClick={()=>toggleSelection('goals', 'Menos de 4.5')} />
@@ -133,23 +177,76 @@ export default function ApuestasPage() {
                           </div>
                       )}
 
-                      <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 shadow-inner">
-                          <div className="flex justify-between items-center mb-3 border-b border-gray-200 pb-2"><span className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1"><Calculator size={12}/> Cuota Total</span><span className="font-mono font-black text-2xl text-purple-600">x{totalOdd}</span></div>
-                          <div className="flex gap-2 items-center">
-                              <input type="number" className="bg-white border-2 border-gray-200 rounded-xl px-4 py-3 w-1/3 font-mono font-bold outline-none focus:border-black text-center text-lg" value={betAmount} onChange={e=>setBetAmount(parseInt(e.target.value))} />
-                              <button onClick={realizarApuesta} disabled={selections.length===0} className="flex-1 bg-black text-white font-black p-3 rounded-xl uppercase tracking-wider text-xs hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center"><span>APOSTAR {betAmount}€</span>{selections.length > 0 && <span className="text-[9px] text-green-400">Ganas: {potentialWin}€</span>}</button>
+                      {!isUserPlaying && currentMatch && (
+                          <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 shadow-inner">
+                              <div className="flex justify-between items-center mb-3 border-b border-gray-200 pb-2"><span className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1"><Calculator size={12}/> Cuota Total</span><span className="font-mono font-black text-2xl text-purple-600">x{totalOdd}</span></div>
+                              <div className="flex gap-2 items-center">
+                                  <input type="number" className="bg-white border-2 border-gray-200 rounded-xl px-4 py-3 w-1/3 font-mono font-bold outline-none focus:border-black text-center text-lg" value={betAmount} onChange={e=>setBetAmount(parseInt(e.target.value))} />
+                                  <button onClick={realizarApuesta} disabled={selections.length===0} className="flex-1 bg-black text-white font-black p-3 rounded-xl uppercase tracking-wider text-xs hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center"><span>APOSTAR {betAmount}€</span>{selections.length > 0 && <span className="text-[9px] text-green-400">Ganas: {potentialWin}€</span>}</button>
+                              </div>
                           </div>
-                      </div>
+                      )}
                   </div>
               ) : ( <div className="text-center py-6 text-gray-400 font-bold text-xs uppercase">Mercado Cerrado</div> )}
           </div>
 
-          {/* TABS Y LISTAS */}
           <div className="flex bg-gray-200 p-1 rounded-2xl overflow-x-auto"><button onClick={() => setActiveTab('active')} className={`flex-1 py-3 px-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'active' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>🔥 En Juego</button><button onClick={() => setActiveTab('history')} className={`flex-1 py-3 px-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'history' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>🌍 Historial</button><button onClick={() => setActiveTab('ranking')} className={`flex-1 py-3 px-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'ranking' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>📊 Ranking</button></div>
+          
           <div className="space-y-3">
-              {activeTab === 'active' && ( pendingBets.length > 0 ? pendingBets.map((b:any) => (<div key={b.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center"><div><div className="flex items-center gap-2 mb-1"><span className="font-black text-xs uppercase text-black">{b.bettor}</span></div>{b.type === 'combined' ? (<div className="text-[10px] text-gray-500 font-bold"><span className="bg-purple-100 text-purple-700 px-1 rounded mr-1">COMBINADA x{b.finalOdd}</span>{b.selections.map((s:any)=>s.value).join(" + ")}</div>) : (<p className="text-[10px] text-gray-500 font-bold">Con: <span className="text-black">{b.chosenWinner}</span></p>)}</div><span className="font-mono font-black text-sm">{b.amount}€</span></div>)) : <p className="text-center text-gray-300 text-xs italic py-4">Sin datos.</p>)}
-              {activeTab === 'history' && globalHistory.length > 0 && globalHistory.map((b:any) => (<div key={b.id} className={`p-4 rounded-2xl border flex justify-between items-center bg-white border-gray-100 shadow-sm ${b.status==='won'?'bg-green-50 !border-green-200':'bg-red-50 !border-red-200'}`}><div><div className="flex items-center gap-2 mb-1"><span className="font-black text-xs uppercase text-black">{b.bettor}</span></div><p className="text-[10px] text-gray-500 font-bold">{b.type==='combined'?'Combinada':b.chosenWinner}</p></div><span className={`font-mono font-black text-sm ${b.status==='won'?'text-green-600':'text-red-500'}`}>{b.status==='won'?'+':''}{b.status==='won' ? Math.floor(b.amount * parseFloat(b.finalOdd||'2')) - b.amount : -b.amount}€</span></div>))}
-              {activeTab === 'ranking' && (<div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden"><table className="w-full text-left"><thead className="bg-gray-50 border-b border-gray-100"><tr><th className="p-4 text-[10px] font-black text-gray-400 uppercase">Pos</th><th className="p-4 text-[10px] font-black text-gray-400 uppercase">Jugador</th><th className="p-4 text-[10px] font-black text-gray-400 uppercase text-right">Profit</th></tr></thead><tbody className="divide-y divide-gray-100">{bettingStats.map((stat:any, idx:number)=>(<tr key={stat.name}><td className="p-4 text-xs font-bold text-gray-500">#{idx+1}</td><td className="p-4 font-black text-xs uppercase">{stat.name}</td><td className={`p-4 text-right font-mono font-black text-sm ${stat.profit>=0?'text-green-600':'text-red-500'}`}>{Math.round(stat.profit)}€</td></tr>))}</tbody></table></div>)}
+              {/* VISTA EN JUEGO */}
+              {activeTab === 'active' && ( 
+                  pendingBets.length > 0 ? pendingBets.map((b:any) => (
+                      <div key={b.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center">
+                          <div>
+                              <div className="flex items-center gap-2 mb-1"><span className="font-black text-xs uppercase text-black">{b.bettor}</span></div>
+                              {b.type === 'combined' ? (
+                                  <div className="text-[10px] text-gray-500 font-bold"><span className="bg-purple-100 text-purple-700 px-1 rounded mr-1">COMBINADA x{b.finalOdd}</span>{b.selections.map((s:any)=>s.value).join(" + ")}</div>
+                              ) : (<p className="text-[10px] text-gray-500 font-bold">Con: <span className="text-black">{b.chosenWinner}</span></p>)}
+                          </div>
+                          <span className="font-mono font-black text-sm">{b.amount}€</span>
+                      </div>
+                  )) : <p className="text-center text-gray-300 text-xs italic py-4">Sin datos.</p>
+              )}
+
+              {/* VISTA HISTORIAL (CORREGIDA) */}
+              {activeTab === 'history' && (
+                  globalHistory.length > 0 ? globalHistory.map((b:any) => (
+                      <div key={b.id} className={`p-4 rounded-2xl border flex justify-between items-center bg-white border-gray-100 shadow-sm ${b.status==='won'?'bg-green-50 !border-green-200':'bg-red-50 !border-red-200'}`}>
+                          <div>
+                              <div className="flex items-center gap-2 mb-1"><span className="font-black text-xs uppercase text-black">{b.bettor}</span></div>
+                              <p className="text-[10px] text-gray-500 font-bold">{b.type==='combined'?'Combinada':b.chosenWinner}</p>
+                          </div>
+                          <div className="text-right">
+                              <span className={`font-mono font-black text-sm block ${b.status==='won'?'text-green-600':'text-red-500'}`}>
+                                  {b.status==='won'?'+':'-'}
+                                  {b.status==='won' ? Math.floor(Number(b.amount) * parseFloat(b.finalOdd||'1.0')) - Number(b.amount) : Number(b.amount)}€
+                              </span>
+                              <span className="text-[9px] text-gray-400 font-bold">{b.status==='won'?'PROFIT':'LOSS'}</span>
+                          </div>
+                      </div>
+                  )) : <div className="text-center py-8 text-gray-300"><AlertCircle className="mx-auto mb-2"/>Sin historial.</div>
+              )}
+
+              {/* VISTA RANKING (CORREGIDA) */}
+              {activeTab === 'ranking' && (
+                  <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden animate-in slide-in-from-bottom-2">
+                      <table className="w-full text-left">
+                          <thead className="bg-gray-50 border-b border-gray-100"><tr><th className="p-4 text-[10px] font-black text-gray-400 uppercase">Pos</th><th className="p-4 text-[10px] font-black text-gray-400 uppercase">Jugador</th><th className="p-4 text-[10px] font-black text-gray-400 uppercase text-right">Profit</th></tr></thead>
+                          <tbody className="divide-y divide-gray-100">
+                              {bettingStats.map((stat:any, idx:number)=>(
+                                  <tr key={stat.name} className="hover:bg-gray-50 transition">
+                                      <td className="p-4 text-xs font-bold text-gray-500">#{idx+1}</td>
+                                      <td className="p-4 font-black text-xs uppercase">{stat.name}</td>
+                                      <td className={`p-4 text-right font-mono font-black text-sm ${stat.profit>=0?'text-green-600':'text-red-500'}`}>
+                                          {stat.profit>0?'+':''}{Math.round(stat.profit)}€
+                                      </td>
+                                  </tr>
+                              ))}
+                              {bettingStats.length === 0 && <tr><td colSpan={3} className="p-6 text-center text-xs text-gray-300">Nadie ha ganado ni perdido nada aún.</td></tr>}
+                          </tbody>
+                      </table>
+                  </div>
+              )}
           </div>
       </div>
   );
