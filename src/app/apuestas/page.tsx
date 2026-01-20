@@ -6,11 +6,14 @@ import { doc, addDoc, collection, setDoc, increment, serverTimestamp } from 'fir
 import { Lock, Coins, Crown, TrendingDown, Zap, CheckCheck, Layers, Calculator } from 'lucide-react';
 import Link from 'next/link';
 
+// CONSTANTE DE ESTABILIDAD (Evita cuotas locas)
+const LIQUIDITY = 500; 
+
 export default function ApuestasPage() {
   const { user, users, matches, activeBets } = useApp();
   const [betAmount, setBetAmount] = useState(100);
   const [selectedMatchId, setSelectedMatchId] = useState<number | null>(null);
-  const [selections, setSelections] = useState<{type: string, value: string, odd: number}[]>([]); // Guardamos también la cuota
+  const [selections, setSelections] = useState<{type: string, value: string, odd: number}[]>([]);
   const [activeTab, setActiveTab] = useState<'active' | 'history' | 'ranking'>('active');
 
   const richest = useMemo(() => users.length ? [...users].sort((a,b) => b.balance - a.balance)[0] : null, [users]);
@@ -18,17 +21,29 @@ export default function ApuestasPage() {
   const pendingBets = activeBets.filter((b:any) => b.status === 'pending');
   const globalHistory = activeBets.filter((b:any) => b.status !== 'pending').sort((a:any, b:any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
 
-  // --- CUOTAS DINÁMICAS ---
+  // --- CUOTAS ESTABILIZADAS ---
   const getOdds = (matchId: number, target: string, currentMarket: string) => {
+      // 1. Dinero REAL apostado
       const marketBets = activeBets.filter((b:any) => b.matchId === matchId && b.type === currentMarket && b.status === 'pending');
-      const totalPool = marketBets.reduce((acc: number, b:any) => acc + b.amount, 0) + 100; 
-      const targetBets = marketBets.filter((b:any) => b.chosenWinner === target);
-      const targetPool = targetBets.reduce((acc: number, b:any) => acc + b.amount, 0) + 50; 
-      const rawOdd = totalPool / targetPool;
-      return rawOdd < 1.05 ? 1.05 : parseFloat(rawOdd.toFixed(2));
+      const realTotalPool = marketBets.reduce((acc: number, b:any) => acc + b.amount, 0); 
+      const realTargetPool = marketBets.filter((b:any) => b.chosenWinner === target).reduce((acc: number, b:any) => acc + b.amount, 0); 
+      
+      // 2. Dinero VIRTUAL (La Banca) para estabilizar
+      // Suponemos que hay 2 opciones (Gana/Pierde o Mas/Menos), así que metemos LIQUIDITY a cada lado.
+      const virtualTotal = realTotalPool + (LIQUIDITY * 2);
+      const virtualTarget = realTargetPool + LIQUIDITY;
+
+      // 3. Cálculo Cuota: Total / Opción
+      const rawOdd = virtualTotal / virtualTarget;
+      
+      // Recortamos margen (x1.05 mínimo, x10.0 máximo para seguridad)
+      let finalOdd = parseFloat(rawOdd.toFixed(2));
+      if (finalOdd < 1.05) finalOdd = 1.05;
+      if (finalOdd > 10.0) finalOdd = 10.0;
+      
+      return finalOdd;
   };
 
-  // --- GESTIÓN DE SELECCIONES ---
   const toggleSelection = (type: 'winner'|'goals', value: string) => {
       if (!selectedMatchId) return;
       const odd = getOdds(selectedMatchId, value, type);
@@ -37,7 +52,6 @@ export default function ApuestasPage() {
       if (exists) {
           setSelections(selections.filter(s => !(s.type === type && s.value === value)));
       } else {
-          // Si eliges otro ganador, reemplaza al anterior (no puedes apostar a A y B a la vez en combinada)
           const clean = selections.filter(s => s.type !== type); 
           setSelections([...clean, { type, value, odd }]);
       }
@@ -45,34 +59,29 @@ export default function ApuestasPage() {
 
   const isSelected = (type: string, value: string) => selections.some(s => s.type === type && s.value === value);
 
-  // 🧮 CALCULAR CUOTA TOTAL (MULTIPLICACIÓN)
   const totalOdd = useMemo(() => {
       if (selections.length === 0) return 0;
-      // Multiplicamos las cuotas: 1.5 * 2.0 = 3.0
       const combined = selections.reduce((acc, s) => acc * s.odd, 1);
       return parseFloat(combined.toFixed(2));
   }, [selections]);
 
   const potentialWin = Math.floor(betAmount * totalOdd);
 
-  // --- LANZAR COMBINADA ---
   const realizarApuesta = async () => {
       if (!user) return;
       if (selectedMatchId === null || selections.length === 0 || betAmount <= 0) return alert("Selecciona algo y pon pasta.");
       if (user.balance < betAmount) return alert(`No tienes ${betAmount}€.`);
 
       try {
-          // 1. Cobrar la apuesta única
           await setDoc(doc(db, "users", user.id), { balance: increment(-betAmount) }, { merge: true });
 
-          // 2. Crear UNA SOLA apuesta de tipo 'combined'
           await addDoc(collection(db, "bets"), { 
               matchId: selectedMatchId, 
               bettor: user.id, 
-              type: 'combined', // Tipo especial
-              selections: selections, // Guardamos todas las selecciones dentro
+              type: 'combined',
+              selections: selections, 
               amount: betAmount, 
-              finalOdd: totalOdd, // Fijamos la cuota al momento de apostar
+              finalOdd: totalOdd, 
               status: 'pending', 
               timestamp: serverTimestamp() 
           });
@@ -86,7 +95,7 @@ export default function ApuestasPage() {
   if (!user) return <div className="text-center p-12 mt-10"><Lock size={48} className="mx-auto text-gray-300"/><p className="text-gray-500 font-bold mt-4">Identifícate primero.</p><Link href="/perfil" className="underline font-bold">Ir al Perfil</Link></div>;
   const currentMatch = matches.find((m:any) => m.id === selectedMatchId);
 
-  // STATS RANKING
+  // STATS
   const bettingStats = useMemo(() => {
       const stats: any = {};
       activeBets.forEach((b: any) => {
@@ -107,7 +116,6 @@ export default function ApuestasPage() {
   return (
       <div className="space-y-6 max-w-xl mx-auto animate-in fade-in pb-24 px-4">
           
-          {/* TOP WIDGETS */}
           <div className="grid grid-cols-2 gap-4">
               <div className="bg-gradient-to-br from-yellow-50 to-white p-4 rounded-3xl border border-yellow-200 shadow-sm text-center">
                   <Crown size={24} className="mx-auto text-yellow-500 mb-1"/>
@@ -121,7 +129,6 @@ export default function ApuestasPage() {
               </div>
           </div>
 
-          {/* 🎰 ZONA APUESTAS */}
           <div className="bg-white border-2 border-black p-5 rounded-3xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden">
               <div className="flex justify-between items-center mb-4">
                   <h2 className="text-lg font-black uppercase italic flex items-center gap-2"><Coins className="text-yellow-500"/> Combinadas</h2>
@@ -137,7 +144,6 @@ export default function ApuestasPage() {
 
                       {currentMatch && (
                           <div className="animate-in slide-in-from-bottom-4 space-y-6">
-                              {/* GANADOR */}
                               <div>
                                   <h3 className="text-[10px] font-black uppercase text-gray-400 mb-2 flex items-center gap-1"><Layers size={12}/> Ganador</h3>
                                   <div className="grid grid-cols-2 gap-3">
@@ -145,7 +151,6 @@ export default function ApuestasPage() {
                                       <OddBtn target={currentMatch.p2} odd={getOdds(currentMatch.id, currentMatch.p2, 'winner')} active={isSelected('winner', currentMatch.p2)} onClick={()=>toggleSelection('winner', currentMatch.p2)} />
                                   </div>
                               </div>
-                              {/* GOLES */}
                               <div>
                                   <h3 className="text-[10px] font-black uppercase text-gray-400 mb-2 flex items-center gap-1"><Layers size={12}/> Total Goles</h3>
                                   <div className="grid grid-cols-2 gap-3">
@@ -156,7 +161,6 @@ export default function ApuestasPage() {
                           </div>
                       )}
 
-                      {/* TICKET DE APUESTA (CALCULADORA) */}
                       <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 shadow-inner">
                           <div className="flex justify-between items-center mb-3 border-b border-gray-200 pb-2">
                               <span className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1"><Calculator size={12}/> Cuota Total</span>
@@ -175,7 +179,6 @@ export default function ApuestasPage() {
               ) : ( <div className="text-center py-6 text-gray-400 font-bold text-xs uppercase">Mercado Cerrado</div> )}
           </div>
 
-          {/* TABS (Igual que antes) */}
           <div className="flex bg-gray-200 p-1 rounded-2xl overflow-x-auto">
               <button onClick={() => setActiveTab('active')} className={`flex-1 py-3 px-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'active' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>🔥 En Juego</button>
               <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 px-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'history' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>🌍 Historial</button>
@@ -188,7 +191,6 @@ export default function ApuestasPage() {
                       <div key={b.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center">
                           <div>
                               <div className="flex items-center gap-2 mb-1"><span className="font-black text-xs uppercase text-black">{b.bettor}</span></div>
-                              {/* SI ES COMBINADA */}
                               {b.type === 'combined' ? (
                                   <div className="text-[10px] text-gray-500 font-bold">
                                       <span className="bg-purple-100 text-purple-700 px-1 rounded mr-1">COMBINADA x{b.finalOdd}</span>
@@ -202,7 +204,7 @@ export default function ApuestasPage() {
                       </div>
                   )) : <p className="text-center text-gray-300 text-xs italic py-4">Sin datos.</p>
               )}
-              {/* Resto de tabs omitidos por brevedad (History y Ranking funcionan igual) */}
+              {/* Omitido History y Ranking (sin cambios) */}
           </div>
       </div>
   );
