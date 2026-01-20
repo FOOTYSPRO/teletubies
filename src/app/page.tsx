@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useApp } from '@/lib/context'; // Usamos el contexto global que creamos
+import { useApp } from '@/lib/context'; 
 import { db } from '@/lib/firebase';
 import { doc, setDoc, writeBatch, increment, addDoc, collection, serverTimestamp, query, getDocs } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
@@ -11,12 +11,12 @@ const TEAMS_REAL = ["Man. City 🔵", "Real Madrid 👑", "Bayern 🔴", "Liverp
 const BYE_NAME = "Pase Directo ➡️";
 
 export default function TournamentPage() {
-  const { matches, users, activeBets } = useApp(); // Datos del contexto global
+  const { matches, users, activeBets } = useApp(); 
   
-  // Estados locales solo para la gestión del torneo
+  // Estados locales
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [gameMode, setGameMode] = useState<'1vs1' | '2vs2'>('1vs1');
-  const [showAdmin, setShowAdmin] = useState(false); // Panel oculto de admin
+  const [showAdmin, setShowAdmin] = useState(false); 
 
   // --- LÓGICA TORNEO ---
   const togglePlayerSelection = (name: string) => {
@@ -27,7 +27,7 @@ export default function TournamentPage() {
   const handleCrearTorneo = async () => {
       if (selectedPlayers.length < 2) return alert("Mínimo 2 jugadores.");
       let players = [...selectedPlayers];
-      let targetSize = players.length <= 4 ? 4 : 8; // Ajuste automático de tamaño
+      let targetSize = players.length <= 4 ? 4 : 8; 
       if (players.length > 8) return alert("Por ahora el sistema soporta máx 8 equipos/jugadores.");
       
       while (players.length < targetSize) players.push(BYE_NAME);
@@ -38,7 +38,8 @@ export default function TournamentPage() {
       const getMatchData = (idx: number) => {
           const name = shuffledP[idx];
           const isBye = name === BYE_NAME;
-          const u = users.find(user => user.id === name);
+          // CORRECCIÓN AQUÍ: Tipado explícito (user: any) para evitar el error de build
+          const u = users.find((user: any) => user.id === name);
           return { name: name, team: isBye ? null : shuffledT[idx], club: isBye ? null : (u?.clubName || "Invitado") };
       };
 
@@ -81,7 +82,8 @@ export default function TournamentPage() {
 
   const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
     if (s1 === s2) return alert("❌ En eliminatorias no hay empate.");
-    const m = matches.find(x => x.id === matchId);
+    // CORRECCIÓN AQUÍ TAMBIÉN: (x: any)
+    const m = matches.find((x: any) => x.id === matchId);
     if (!m) return;
     
     const isP1 = s1 > s2;
@@ -91,9 +93,9 @@ export default function TournamentPage() {
 
     try {
       // 1. Resolver Apuestas
-      const pending = activeBets.filter(b => b.matchId === matchId && b.status === 'pending');
+      const pending = activeBets.filter((b: any) => b.matchId === matchId && b.status === 'pending');
       const batch = writeBatch(db);
-      pending.forEach(b => {
+      pending.forEach((b: any) => {
           const ref = doc(db, "bets", b.id);
           if (b.chosenWinner === winner) { 
               batch.update(doc(db, "users", b.bettor), { balance: increment(b.amount * 2) }); 
@@ -109,7 +111,7 @@ export default function TournamentPage() {
       
       // 3. Avanzar Ronda
       let next = [...matches];
-      next = next.map(x => x.id === matchId ? { ...x, score1: s1, score2: s2, winner: winner } : x);
+      next = next.map((x: any) => x.id === matchId ? { ...x, score1: s1, score2: s2, winner: winner } : x);
 
       const send = (tId: number, slot: 'p1'|'p2', n: string, t: any, c: any) => { if(next[tId]){ next[tId][slot]=n; next[tId][slot==='p1'?'p1Team':'p2Team']=t; next[tId][slot==='p1'?'p1Club':'p2Club']=c; }};
       const isSmall = matches.length === 4;
@@ -184,7 +186,7 @@ export default function TournamentPage() {
 
                 {/* LISTA DE JUGADORES */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10 text-left">
-                    {users.map(u => (
+                    {users.map((u: any) => (
                         <button key={u.id} onClick={()=>togglePlayerSelection(u.id)} className={`p-4 rounded-xl border-2 text-sm font-bold truncate transition flex items-center justify-between ${selectedPlayers.includes(u.id)?'bg-blue-600 border-blue-600 text-white shadow-md transform scale-105':'bg-white text-gray-600 border-gray-100 hover:border-gray-300'}`}>
                             {u.id}
                             {selectedPlayers.includes(u.id) && <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>}
@@ -261,7 +263,7 @@ export default function TournamentPage() {
 }
 
 // --- TARJETA DE PARTIDO (DISEÑO BLANCO Y LIMPIO) ---
-function MatchCard({ m, onFinish, isFinal }: { m?: any, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean }) {
+function MatchCard({ m, onFinish, isFinal, label }: { m?: any, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean, label?: string }) {
     const [s1, setS1] = useState(""); const [s2, setS2] = useState("");
     if (!m) return <div className="bg-gray-100 h-32 rounded-2xl animate-pulse"></div>;
     const isWaiting = m.p1 === "Esperando..." || m.p2 === "Esperando...";
@@ -276,8 +278,10 @@ function MatchCard({ m, onFinish, isFinal }: { m?: any, onFinish: (id: number, s
 
     return (
         <div className={`relative bg-white border-2 ${m.winner ? 'border-gray-200 opacity-60 grayscale' : isFinal ? 'border-yellow-400 shadow-xl shadow-yellow-100' : 'border-gray-100 shadow-lg'} p-5 rounded-2xl overflow-hidden transition-all hover:scale-[1.02]`}>
+            {label && <div className="absolute top-0 right-0 bg-black text-white text-[9px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wider">{label}</div>}
+            
             {/* EQUIPO 1 */}
-            <div className="flex justify-between items-center mb-3">
+            <div className="flex justify-between items-center mb-3 pt-2">
                 <div className="overflow-hidden pr-2">
                     <p className={`font-black text-base truncate ${m.winner===m.p1 ? 'text-green-600' : 'text-black'}`}>{m.p1}</p>
                     <div className="flex gap-2 text-[10px] font-bold uppercase tracking-wide">
