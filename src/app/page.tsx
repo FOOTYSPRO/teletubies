@@ -607,7 +607,7 @@ function AppContent() {
 function HeroCarousel() {
     const [current, setCurrent] = useState(0);
     const slides = [
-        {title: "FOOTYS LEAGUE", subtitle: "Donde nacen las leyendas.", bg: "bg-black"},
+        {title: "TELETUBIES LEAGUE", subtitle: "Donde nacen las leyendas.", bg: "bg-black"},
         {title: "APUESTA AHORA", subtitle: "Multiplica tus monedas.", bg: "bg-blue-900"},
         {title: "RANKING 2025", subtitle: "¿Quién será el MVP?", bg: "bg-purple-900"}
     ];
