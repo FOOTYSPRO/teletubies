@@ -7,7 +7,7 @@ import { doc, setDoc, writeBatch, increment, addDoc, collection, serverTimestamp
 import confetti from 'canvas-confetti';
 import { Settings, Trash2, Users, Bot, UserPlus, Trophy } from 'lucide-react';
 
-const TEAMS_REAL = ["Arsenal 🔴", "Inter ⚫🔵", "Barça 🔵🔴", "Atleti 🔴⚪", "Leverkusen ⚫🔴", "Juve ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Spurs ⚪", "Villa 🦁", "Newcastle ⚫⚪", "Sporting", "Mónaco","Leipzig" ];
+const TEAMS_REAL = ["Arsenal 🔴", "Inter ⚫🔵", "Barça 🔵🔴", "Atleti 🔴⚪", "PSV", "Leverkusen ⚫🔴", "Juve ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Spurs ⚪", "Villa 🦁", "Newcastle ⚫⚪", "Sporting", "Mónaco","Leipzig" ];
 const BYE_NAME = "Pase Directo ➡️";
 const LIQUIDITY = 50;
 
