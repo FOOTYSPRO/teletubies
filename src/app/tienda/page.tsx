@@ -11,24 +11,18 @@ export default function TiendaPage() {
   const [selectedMatchId, setSelectedMatchId] = useState<string>("");
 
   const items = [
-    {
-      id: 'insurance',
-      name: '🛡️ Seguro de Vida',
-      price: 300,
-      desc: 'Si pierdes, no te restan puntos de ranking ni honor.',
-      color: 'bg-blue-50 border-blue-200 text-blue-700'
-    },
+  
     {
       id: 'swap', // ANTES ERA VETO
       name: '🔄 El Cambiazo',
-      price: 500,
+      price: 8000,
       desc: '¿Tu rival tiene al City y tú al PSV? Cómpralo y os INTERCAMBIÁIS los equipos.',
       color: 'bg-purple-50 border-purple-200 text-purple-700'
     },
     {
       id: 'injury',
       name: '🤕 Rompepiernas',
-      price: 800,
+      price: 5000,
       desc: 'Tu rival debe sentar a su jugador con más media en el banquillo.',
       color: 'bg-red-50 border-red-200 text-red-700'
     }
