@@ -21,7 +21,6 @@ export default function TorneoPage() {
       if (selectedPlayers.includes(name)) setSelectedPlayers(selectedPlayers.filter(p => p !== name));
       else { if (selectedPlayers.length >= 16) return alert("Máximo 16 jugadores."); setSelectedPlayers([...selectedPlayers, name]); }
   };
-
   const addCpu = () => { if (selectedPlayers.length >= 16) return; const cpuName = `CPU ${selectedPlayers.filter(p => p.startsWith('CPU')).length + 1}`; setSelectedPlayers([...selectedPlayers, cpuName]); };
 
   const createTeams = (individualPlayers: string[]) => {
@@ -91,11 +90,9 @@ export default function TorneoPage() {
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: clean }, { merge: true });
   };
 
-  // --- LÓGICA DE FINALIZAR CON APUESTAS AVANZADAS ---
-  const finalizarPartido = async (matchId: number, s1: number, s2: number, corners: number) => {
+  // --- LÓGICA DE FINALIZAR SIMPLIFICADA (SOLO WINNER Y GOALS) ---
+  const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
     if (s1 === s2) return alert("❌ En eliminatorias no hay empate.");
-    console.log("Finalizando partido:", matchId, s1, s2, corners);
-
     const m = matches.find((x: any) => x.id === matchId);
     if (!m) return;
     const isP1 = s1 > s2;
@@ -108,12 +105,12 @@ export default function TorneoPage() {
       const pending = activeBets.filter((b: any) => b.matchId === matchId && b.status === 'pending');
       const batch = writeBatch(db);
       
-      const pools: any = { winner: 0, goals: 0, corners: 0 };
-      const winningPools: any = { winner: 0, goals: 0, corners: 0 };
+      const pools: any = { winner: 0, goals: 0 };
+      const winningPools: any = { winner: 0, goals: 0 };
 
-      // 1. CÁLCULOS
+      // 1. CÁLCULO DE CUOTAS
       pending.forEach((b: any) => {
-          const type = (b.type && ['winner','goals','corners'].includes(b.type)) ? b.type : 'winner';
+          const type = (b.type === 'goals') ? 'goals' : 'winner';
           pools[type] += (b.amount || 0);
 
           let isVirtualWin = false;
@@ -122,27 +119,19 @@ export default function TorneoPage() {
              if (b.chosenWinner.includes('Mas') && totalGoals > (b.chosenWinner.includes('3.5')?3.5:2.5)) isVirtualWin = true;
              else if (b.chosenWinner.includes('Menos') && totalGoals < (b.chosenWinner.includes('3.5')?3.5:2.5)) isVirtualWin = true;
           }
-          else if (type === 'corners') {
-             if (b.chosenWinner.includes('Mas') && corners > 5.5) isVirtualWin = true;
-             else if (b.chosenWinner.includes('Menos') && corners < 5.5) isVirtualWin = true;
-          }
           if (isVirtualWin) winningPools[type] += (b.amount || 0);
       });
       
       // 2. REPARTO
       pending.forEach((b: any) => {
           const ref = doc(db, "bets", b.id);
-          const type = (b.type && ['winner','goals','corners'].includes(b.type)) ? b.type : 'winner';
+          const type = (b.type === 'goals') ? 'goals' : 'winner';
           let won = false;
 
           if (type === 'winner' && b.chosenWinner === winner) won = true;
           else if (type === 'goals') {
              if (b.chosenWinner.includes('Mas') && totalGoals > (b.chosenWinner.includes('3.5')?3.5:2.5)) won = true;
              else if (b.chosenWinner.includes('Menos') && totalGoals < (b.chosenWinner.includes('3.5')?3.5:2.5)) won = true;
-          }
-          else if (type === 'corners') {
-             if (b.chosenWinner.includes('Mas') && corners > 5.5) won = true;
-             else if (b.chosenWinner.includes('Menos') && corners < 5.5) won = true;
           }
 
           if (won) {
@@ -160,7 +149,7 @@ export default function TorneoPage() {
       });
       await batch.commit();
 
-      // RANKING
+      // RANKING Y AVANCE
       if (!winnerIsCpu && !m.isBye && winner !== "Esperando...") { 
           if (isTeam) {
               const [p1, p2] = winner.split(" & ");
@@ -171,7 +160,6 @@ export default function TorneoPage() {
           }
       }
       
-      // AVANZAR
       let next = [...matches];
       next = next.map((x: any) => x.id === matchId ? { ...x, score1: s1, score2: s2, winner: winner } : x);
 
@@ -187,7 +175,6 @@ export default function TorneoPage() {
       }
 
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: next }, { merge: true });
-      
       const finalId = isSmall ? 2 : 6;
       if(matchId===finalId) { if(!winnerIsCpu) confetti({particleCount:500}); await addDoc(collection(db,"history"),{winner,winnerTeam:isP1?m.p1Team:m.p2Team,date:serverTimestamp(),type:gameMode}); }
     } catch (e) { console.error(e); }
@@ -205,7 +192,6 @@ export default function TorneoPage() {
             <div><h1 className="text-3xl font-black italic">FOOTYS <span className="text-blue-600">ARENA</span></h1></div>
             <button onClick={() => setShowAdmin(!showAdmin)} className="p-2 bg-white border rounded-full text-gray-400"><Settings size={20} /></button>
         </div>
-        
         {showAdmin && ( <div className="mb-8 p-4 bg-gray-100 rounded-xl flex justify-between items-center"><span className="text-xs font-bold uppercase">Zona Admin</span><button onClick={limpiarPizarra} className="flex gap-2 bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold"><Trash2 size={14}/> RESET</button></div> )}
         
         {matches.length === 0 ? (
@@ -234,8 +220,8 @@ export default function TorneoPage() {
   );
 }
 
-function MatchCard({ m, onFinish, isFinal, label }: { m?: any, onFinish: (id: number, s1: number, s2: number, corners: number) => void, isFinal?: boolean, label?: string }) {
-    const [s1, setS1] = useState(""); const [s2, setS2] = useState(""); const [corn, setCorn] = useState("");
+function MatchCard({ m, onFinish, isFinal, label }: { m?: any, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean, label?: string }) {
+    const [s1, setS1] = useState(""); const [s2, setS2] = useState("");
     if (!m) return null;
     const isWaiting = m.p1 === "Esperando..." || m.p2 === "Esperando...";
     
@@ -252,27 +238,17 @@ function MatchCard({ m, onFinish, isFinal, label }: { m?: any, onFinish: (id: nu
                 <div className="overflow-hidden pr-2"><p className={`font-black text-lg truncate ${m.winner===m.p1 ? 'text-green-600' : 'text-black'}`}>{m.p1}</p><div className="flex gap-2 text-[10px] font-bold uppercase opacity-80"><span className="text-blue-600">{m.p1Team}</span></div></div>
                 {m.winner ? <span className="font-mono font-black text-3xl">{m.score1}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black border-2 border-gray-100" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting} />}
             </div>
-            
             <div className="w-full h-px bg-gray-200 mb-4 flex items-center justify-center"><span className="bg-white px-2 text-xs text-gray-400 font-black italic">VS</span></div>
-            
             <div className="flex justify-between items-center mb-6">
                 <div className="overflow-hidden pr-2"><p className={`font-black text-lg truncate ${m.winner===m.p2 ? 'text-green-600' : 'text-black'}`}>{m.p2}</p><div className="flex gap-2 text-[10px] font-bold uppercase opacity-80"><span className="text-blue-600">{m.p2Team}</span></div></div>
                 {m.winner ? <span className="font-mono font-black text-3xl">{m.score2}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black border-2 border-gray-100" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} />}
             </div>
 
             {!m.winner && !isWaiting && (
-                <div className="mb-4">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Total Corners (Opcional):</label>
-                    <input type="number" placeholder="0" className="w-full mt-1 bg-gray-50 p-2 rounded-xl text-sm font-bold border-2 border-gray-100 focus:border-black outline-none" value={corn} onChange={e=>setCorn(e.target.value)} />
-                </div>
-            )}
-
-            {!m.winner && !isWaiting && (
-                // LÓGICA DE BOTÓN ARREGLADA: Permite finalizar aunque corn sea "" (envía 0)
                 <button 
                     onClick={() => {
-                        if (s1 === "" || s2 === "") return alert("❌ Introduce el marcador de goles.");
-                        onFinish(m.id, +s1, +s2, corn ? +corn : 0);
+                        if (s1 === "" || s2 === "") return alert("❌ Introduce el marcador.");
+                        onFinish(m.id, +s1, +s2);
                     }} 
                     className="w-full bg-black hover:bg-gray-900 text-white text-xs font-black py-4 rounded-2xl transition shadow-md uppercase tracking-widest flex justify-center items-center gap-2"
                 >
