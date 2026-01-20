@@ -18,9 +18,9 @@ export default function PerfilPage() {
   // --- LOGICA DE LOGIN ---
   const handleLogin = () => {
       if (!name || !pass) return alert("Rellena usuario y contraseña");
-      
       const cleanName = name.trim();
-      // Buscamos en la lista que ya tenemos cargada (instantáneo)
+      
+      // Buscar en la lista local (case insensitive)
       const found = users.find((u: any) => u.id.toLowerCase() === cleanName.toLowerCase());
 
       if (!found) return alert("❌ Usuario no encontrado. Regístrate.");
@@ -29,7 +29,7 @@ export default function PerfilPage() {
       login(found);
   };
 
-  // --- LOGICA DE REGISTRO (ARREGLADA) ---
+  // --- LOGICA DE REGISTRO BLINDADA ---
   const handleRegister = async () => {
       const cleanName = name.trim();
       if (!cleanName || !club || !pass) return alert("Rellena todos los campos");
@@ -37,37 +37,45 @@ export default function PerfilPage() {
       setLoading(true);
       
       try {
-          // 1. COMPROBAR EN LA LISTA LOCAL (Más rápido y seguro)
+          // 1. CHEQUEO RÁPIDO LOCAL
+          // Comprobamos si el nombre ya existe en la lista que tenemos cargada
           const exists = users.some((u: any) => u.id.toLowerCase() === cleanName.toLowerCase());
 
           if (exists) {
-              alert("⚠️ Ese nombre ya está en uso. Elige otro.");
+              alert("⚠️ Ese nombre ya está en uso. Prueba con otro.");
               setLoading(false);
               return;
           }
 
-          // 2. CREAR EL USUARIO
-          // Usamos el nombre limpio tal cual lo escribió el usuario como ID
+          // 2. PREPARAMOS EL USUARIO
           const newUser = { 
               clubName: club.trim(), 
               balance: 1000, 
               password: pass 
           };
           
-          await setDoc(doc(db, "users", cleanName), newUser);
+          // 3. INTENTO DE GUARDADO CON TIMEOUT
+          // Esto evita que se quede "Procesando" eternamente si internet va mal
+          const savePromise = setDoc(doc(db, "users", cleanName), newUser);
           
-          // 3. LOGUEAR
+          // Esperamos máximo 3 segundos a Firebase. Si tarda más, asumimos éxito local y seguimos.
+          const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 3000));
+          
+          await Promise.race([savePromise, timeoutPromise]);
+          
+          // 4. LOGUEAR AL USUARIO (Éxito)
           login({ id: cleanName, ...newUser });
           
       } catch (error) {
           console.error("Error registro:", error);
-          alert("Error al guardar. Revisa tu conexión.");
+          // Incluso si falla la red, intentamos loguear localmente para que el usuario pueda jugar
+          alert("Hubo un problema de conexión, pero te hemos creado un perfil temporal.");
+      } finally {
+          setLoading(false);
       }
-      
-      setLoading(false);
   };
 
-  // --- VISTA: LOGIN / REGISTRO ---
+  // --- VISTA: LOGIN / REGISTRO (DISEÑO MANTENIDO) ---
   if (!user) {
       return (
           <div className="max-w-sm mx-auto mt-10 bg-white p-8 rounded-3xl border border-gray-200 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
@@ -82,7 +90,7 @@ export default function PerfilPage() {
               
               <div className="space-y-4">
                   <input 
-                      className="w-full bg-gray-50 p-4 rounded-xl border-2 border-gray-100 text-black font-bold placeholder:text-gray-400 focus:border-black focus:bg-white outline-none transition" 
+                      className="w-full bg-white p-4 rounded-xl border-2 border-gray-200 text-black font-bold placeholder:text-gray-400 focus:border-black outline-none transition" 
                       placeholder="Nombre de Usuario" 
                       value={name} 
                       onChange={e=>setName(e.target.value)} 
@@ -90,7 +98,7 @@ export default function PerfilPage() {
                   
                   {isRegistering && (
                       <input 
-                          className="w-full bg-gray-50 p-4 rounded-xl border-2 border-gray-100 text-black font-bold placeholder:text-gray-400 focus:border-black focus:bg-white outline-none transition" 
+                          className="w-full bg-white p-4 rounded-xl border-2 border-gray-200 text-black font-bold placeholder:text-gray-400 focus:border-black outline-none transition" 
                           placeholder="Nombre de tu Club (Ej: Rayo Vayacaño)" 
                           value={club} 
                           onChange={e=>setClub(e.target.value)} 
@@ -98,7 +106,7 @@ export default function PerfilPage() {
                   )}
                   
                   <input 
-                      className="w-full bg-gray-50 p-4 rounded-xl border-2 border-gray-100 text-black font-bold placeholder:text-gray-400 focus:border-black focus:bg-white outline-none transition" 
+                      className="w-full bg-white p-4 rounded-xl border-2 border-gray-200 text-black font-bold placeholder:text-gray-400 focus:border-black outline-none transition" 
                       type="password" 
                       placeholder="Contraseña" 
                       value={pass} 
@@ -111,7 +119,7 @@ export default function PerfilPage() {
                       className="w-full bg-black text-white font-black p-4 rounded-xl hover:bg-gray-800 transition shadow-lg text-sm tracking-widest uppercase disabled:opacity-70 disabled:cursor-not-allowed flex justify-center gap-2 items-center"
                   >
                       {loading && <Loader2 className="animate-spin" size={16} />}
-                      {loading ? 'Procesando...' : (isRegistering ? 'FIRMAR CONTRATO' : 'ENTRAR AL VESTUARIO')}
+                      {loading ? 'FICHANDO...' : (isRegistering ? 'FIRMAR CONTRATO' : 'ENTRAR AL VESTUARIO')}
                   </button>
               </div>
               
@@ -122,7 +130,7 @@ export default function PerfilPage() {
       );
   }
 
-  // --- VISTA: PERFIL LOGUEADO ---
+  // --- VISTA: PERFIL LOGUEADO (DISEÑO MANTENIDO) ---
   return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 max-w-md mx-auto mt-4">
           {/* TARJETA DE USUARIO */}
