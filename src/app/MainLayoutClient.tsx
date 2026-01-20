@@ -37,14 +37,13 @@ export default function MainLayoutClient({ children }: { children: React.ReactNo
                 </Link>
             </header>
 
-            {/* CONTENIDO (Ancho liberado) */}
-            <main className="pt-4 pb-24 w-full">
+            {/* CONTENIDO */}
+            <main className="pt-4 pb-32 w-full">
                 {children}
             </main>
 
             {/* BOTTOM NAV */}
-            <nav className="fixed bottom-4 left-4 right-4 bg-white/90 backdrop-blur-xl border border-gray-200 rounded-2xl flex justify-around p-2 shadow-2xl z-50 max-w-md mx-auto">
-                {/* OJO: Cambiado href de '/' a '/torneo' */}
+            <nav className="fixed bottom-4 left-4 right-4 bg-white/95 backdrop-blur-xl border border-gray-200 rounded-2xl flex justify-around p-2 shadow-2xl z-40 max-w-md mx-auto">
                 <NavItem icon={<Trophy size={18}/>} label="Torneo" href="/torneo" active={pathname === '/torneo'} />
                 <NavItem icon={<Banknote size={18}/>} label="Apuestas" href="/apuestas" active={pathname === '/apuestas'} />
                 <NavItem icon={<Dices size={18}/>} label="Mixer" href="/pachanga" active={pathname === '/pachanga'} />
@@ -56,7 +55,7 @@ export default function MainLayoutClient({ children }: { children: React.ReactNo
 
 function NavItem({ icon, label, href, active }: any) {
     return (
-        <Link href={href} className={`flex flex-col items-center justify-center w-full py-1 rounded-xl transition ${active ? 'text-blue-600' : 'text-gray-400 hover:text-black'}`}>
+        <Link href={href} className={`flex flex-col items-center justify-center w-full py-1 rounded-xl transition ${active ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-black'}`}>
             <span className="mb-0.5">{icon}</span>
             <span className="text-[9px] font-bold uppercase tracking-widest">{label}</span>
         </Link>
