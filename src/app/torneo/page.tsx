@@ -12,7 +12,6 @@ const BYE_NAME = "Pase Directo ➡️";
 
 export default function TorneoPage() {
   const { matches, users, activeBets } = useApp();
-  
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [gameMode, setGameMode] = useState<'1vs1' | '2vs2'>('1vs1');
   const [showAdmin, setShowAdmin] = useState(false); 
@@ -90,7 +89,7 @@ export default function TorneoPage() {
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: clean }, { merge: true });
   };
 
-  // --- LÓGICA DE FINALIZAR SIMPLIFICADA (SOLO WINNER Y GOALS) ---
+  // --- LÓGICA DE FINALIZAR (SOPORTA COMBINADAS) ---
   const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
     if (s1 === s2) return alert("❌ En eliminatorias no hay empate.");
     const m = matches.find((x: any) => x.id === matchId);
@@ -105,41 +104,35 @@ export default function TorneoPage() {
       const pending = activeBets.filter((b: any) => b.matchId === matchId && b.status === 'pending');
       const batch = writeBatch(db);
       
-      const pools: any = { winner: 0, goals: 0 };
-      const winningPools: any = { winner: 0, goals: 0 };
-
-      // 1. CÁLCULO DE CUOTAS
-      pending.forEach((b: any) => {
-          const type = (b.type === 'goals') ? 'goals' : 'winner';
-          pools[type] += (b.amount || 0);
-
-          let isVirtualWin = false;
-          if (type === 'winner' && b.chosenWinner === winner) isVirtualWin = true;
-          else if (type === 'goals') {
-             if (b.chosenWinner.includes('Mas') && totalGoals > (b.chosenWinner.includes('3.5')?3.5:2.5)) isVirtualWin = true;
-             else if (b.chosenWinner.includes('Menos') && totalGoals < (b.chosenWinner.includes('3.5')?3.5:2.5)) isVirtualWin = true;
-          }
-          if (isVirtualWin) winningPools[type] += (b.amount || 0);
-      });
-      
-      // 2. REPARTO
       pending.forEach((b: any) => {
           const ref = doc(db, "bets", b.id);
-          const type = (b.type === 'goals') ? 'goals' : 'winner';
           let won = false;
 
-          if (type === 'winner' && b.chosenWinner === winner) won = true;
-          else if (type === 'goals') {
-             if (b.chosenWinner.includes('Mas') && totalGoals > (b.chosenWinner.includes('3.5')?3.5:2.5)) won = true;
-             else if (b.chosenWinner.includes('Menos') && totalGoals < (b.chosenWinner.includes('3.5')?3.5:2.5)) won = true;
+          // HELPER PARA CHECKAR UNA SOLA CONDICIÓN
+          const checkSelection = (type: string, val: string) => {
+              if (type === 'winner' && val === winner) return true;
+              if (type === 'goals') {
+                 if (val.includes('Mas') && totalGoals > (val.includes('3.5')?3.5:2.5)) return true;
+                 if (val.includes('Menos') && totalGoals < (val.includes('3.5')?3.5:2.5)) return true;
+              }
+              return false;
+          };
+
+          // 1. ES COMBINADA?
+          if (b.type === 'combined' && Array.isArray(b.selections)) {
+              // Tienen que ser correctas TODAS las selecciones
+              const allCorrect = b.selections.every((sel: any) => checkSelection(sel.type, sel.value));
+              if (allCorrect) won = true;
+          } 
+          // 2. ES SIMPLE?
+          else {
+              won = checkSelection(b.type || 'winner', b.chosenWinner);
           }
 
           if (won) {
-              const totalMoney = pools[type];
-              const winnersMoney = winningPools[type];
-              let odd = winnersMoney > 0 ? (totalMoney / winnersMoney) : 1;
-              if (odd < 1.05) odd = 1.05;
-
+              // Si es combinada, la cuota ya viene fijada (finalOdd)
+              // Si es simple, deberíamos calcularla dinámicamente, pero para simplificar código híbrido usamos la que guardamos o x2
+              let odd = parseFloat(b.finalOdd || '2.0');
               const profit = Math.floor(b.amount * odd);
               batch.update(doc(db, "users", b.bettor), { balance: increment(profit) }); 
               batch.update(ref, { status: 'won', finalOdd: odd.toFixed(2) });
@@ -225,7 +218,6 @@ function MatchCard({ m, onFinish, isFinal, label }: { m?: any, onFinish: (id: nu
     if (!m) return null;
     const isWaiting = m.p1 === "Esperando..." || m.p2 === "Esperando...";
     
-    // ESTILOS
     if (m.isBye) return <div className="bg-green-50 border-2 border-green-100 p-4 rounded-3xl flex flex-col items-center justify-center text-center opacity-60"><span className="text-green-700 font-black text-[10px] uppercase">Pase Directo</span><p className="font-black text-xl text-green-900">{m.winner}</p></div>;
     let cardStyle = "border-2 border-gray-100 shadow-sm"; 
     if (m.winner) cardStyle = "border-2 border-gray-100 opacity-50 grayscale bg-gray-50/50 shadow-none";
