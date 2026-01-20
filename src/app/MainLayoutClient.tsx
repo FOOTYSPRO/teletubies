@@ -1,4 +1,3 @@
-// src/app/MainLayoutClient.tsx
 'use client';
 
 import { useApp } from '@/lib/context';
@@ -38,14 +37,15 @@ export default function MainLayoutClient({ children }: { children: React.ReactNo
                 </Link>
             </header>
 
-            {/* CONTENIDO */}
-            <main className="pt-4 max-w-4xl mx-auto p-4">
+            {/* CONTENIDO (Ancho liberado) */}
+            <main className="pt-4 pb-24 w-full">
                 {children}
             </main>
 
             {/* BOTTOM NAV */}
-            <nav className="fixed bottom-4 left-4 right-4 bg-white/90 backdrop-blur-xl border border-gray-200 rounded-2xl flex justify-around p-2 shadow-2xl z-50">
-                <NavItem icon={<Trophy size={18}/>} label="Torneo" href="/" active={pathname === '/'} />
+            <nav className="fixed bottom-4 left-4 right-4 bg-white/90 backdrop-blur-xl border border-gray-200 rounded-2xl flex justify-around p-2 shadow-2xl z-50 max-w-md mx-auto">
+                {/* OJO: Cambiado href de '/' a '/torneo' */}
+                <NavItem icon={<Trophy size={18}/>} label="Torneo" href="/torneo" active={pathname === '/torneo'} />
                 <NavItem icon={<Banknote size={18}/>} label="Apuestas" href="/apuestas" active={pathname === '/apuestas'} />
                 <NavItem icon={<Dices size={18}/>} label="Mixer" href="/pachanga" active={pathname === '/pachanga'} />
                 <NavItem icon={<Users size={18}/>} label="Perfil" href="/perfil" active={pathname === '/perfil'} />

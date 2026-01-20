@@ -1,0 +1,167 @@
+'use client';
+
+import React, { useState } from 'react';
+import { useApp } from '@/lib/context';
+import { db } from '@/lib/firebase';
+import { doc, setDoc, writeBatch, increment, addDoc, collection, serverTimestamp, query, getDocs } from 'firebase/firestore';
+import confetti from 'canvas-confetti';
+import { Settings, Trash2, Users } from 'lucide-react';
+
+const TEAMS_REAL = ["Man. City 🔵", "Real Madrid 👑", "Bayern 🔴", "Liverpool 🔴", "Arsenal 🔴", "Inter ⚫🔵", "PSG 🗼", "Barça 🔵🔴", "Atleti 🔴⚪", "Leverkusen ⚫🔴", "Milan ⚫🔴", "Juve ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Spurs ⚪", "Villa 🦁", "Newcastle ⚫⚪"];
+const BYE_NAME = "Pase Directo ➡️";
+
+export default function TorneoPage() {
+  const { matches, users, activeBets } = useApp();
+  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
+  const [gameMode, setGameMode] = useState<'1vs1' | '2vs2'>('1vs1');
+  const [showAdmin, setShowAdmin] = useState(false); 
+
+  // --- LÓGICA TORNEO (MISMA QUE ANTES) ---
+  const togglePlayerSelection = (name: string) => {
+      if (selectedPlayers.includes(name)) setSelectedPlayers(selectedPlayers.filter(p => p !== name));
+      else { if (selectedPlayers.length >= 16) return alert("Máximo 16 jugadores."); setSelectedPlayers([...selectedPlayers, name]); }
+  };
+
+  const handleCrearTorneo = async () => {
+      if (selectedPlayers.length < 2) return alert("Selecciona al menos 2 jugadores.");
+      let players = [...selectedPlayers];
+      let targetSize = players.length <= 4 ? 4 : 8; 
+      while (players.length < targetSize) players.push(BYE_NAME);
+      const shuffledP = [...players].sort(() => Math.random() - 0.5);
+      const shuffledT = [...TEAMS_REAL].sort(() => Math.random() - 0.5);
+      const getMatchData = (idx: number) => {
+          const name = shuffledP[idx];
+          const isBye = name === BYE_NAME;
+          const u = users.find((user: any) => user.id === name);
+          return { name: name, team: isBye ? null : shuffledT[idx], club: isBye ? null : (u?.clubName || "Invitado") };
+      };
+      let newMatches: any[] = [];
+      if (targetSize === 4) {
+          newMatches = [
+              { id: 0, p1: getMatchData(0).name, p1Team: getMatchData(0).team, p1Club: getMatchData(0).club, p2: getMatchData(1).name, p2Team: getMatchData(1).team, p2Club: getMatchData(1).club, round: 'S' },
+              { id: 1, p1: getMatchData(2).name, p1Team: getMatchData(2).team, p1Club: getMatchData(2).club, p2: getMatchData(3).name, p2Team: getMatchData(3).team, p2Club: getMatchData(3).club, round: 'S' },
+              { id: 2, p1: "Esperando...", p2: "Esperando...", round: 'F' }, { id: 3, p1: "Esperando...", p2: "Esperando...", round: '3rd' }
+          ];
+      } else {
+          newMatches = [
+              { id: 0, p1: getMatchData(0).name, p1Team: getMatchData(0).team, p1Club: getMatchData(0).club, p2: getMatchData(1).name, p2Team: getMatchData(1).team, p2Club: getMatchData(1).club, round: 'Q' },
+              { id: 1, p1: getMatchData(2).name, p1Team: getMatchData(2).team, p1Club: getMatchData(2).club, p2: getMatchData(3).name, p2Team: getMatchData(3).team, p2Club: getMatchData(3).club, round: 'Q' },
+              { id: 2, p1: getMatchData(4).name, p1Team: getMatchData(4).team, p1Club: getMatchData(4).club, p2: getMatchData(5).name, p2Team: getMatchData(5).team, p2Club: getMatchData(5).club, round: 'Q' },
+              { id: 3, p1: getMatchData(6).name, p1Team: getMatchData(6).team, p1Club: getMatchData(6).club, p2: getMatchData(7).name, p2Team: getMatchData(7).team, p2Club: getMatchData(7).club, round: 'Q' },
+              { id: 4, p1: "Esperando...", p2: "Esperando...", round: 'S' }, { id: 5, p1: "Esperando...", p2: "Esperando...", round: 'S' },
+              { id: 6, p1: "Esperando...", p2: "Esperando...", round: 'F' }, { id: 7, p1: "Esperando...", p2: "Esperando...", round: '3rd' }
+          ];
+      }
+      newMatches.forEach(m => { if(m.p2===BYE_NAME){m.winner=m.p1;m.isBye=true} else if(m.p1===BYE_NAME){m.winner=m.p2;m.isBye=true} });
+      const propagate = (tIdx: number, slot: 'p1'|'p2', s: any) => {
+        const wKey = s.winner===s.p1?'p1':'p2';
+        newMatches[tIdx][slot] = s.winner!;
+        newMatches[tIdx][slot==='p1'?'p1Team':'p2Team'] = s[wKey==='p1'?'p1Team':'p2Team'] || null;
+        newMatches[tIdx][slot==='p1'?'p1Club':'p2Club'] = s[wKey==='p1'?'p1Club':'p2Club'] || null;
+      };
+      if(targetSize===4) { if(newMatches[0].winner) propagate(2,'p1',newMatches[0]); if(newMatches[1].winner) propagate(2,'p2',newMatches[1]); }
+      else { if(newMatches[0].winner) propagate(4,'p1',newMatches[0]); if(newMatches[1].winner) propagate(4,'p2',newMatches[1]); if(newMatches[2].winner) propagate(5,'p1',newMatches[2]); if(newMatches[3].winner) propagate(5,'p2',newMatches[3]); }
+      const clean = newMatches.map(m => JSON.parse(JSON.stringify(m, (k, v) => v === undefined ? null : v)));
+      await setDoc(doc(db, "sala", "principal"), { fifaMatches: clean }, { merge: true });
+  };
+
+  const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
+    if (s1 === s2) return alert("❌ Empate prohibido.");
+    const m = matches.find((x: any) => x.id === matchId);
+    if (!m) return;
+    const isP1 = s1 > s2;
+    const winner = isP1 ? m.p1 : m.p2;
+    try {
+      const pending = activeBets.filter((b: any) => b.matchId === matchId && b.status === 'pending');
+      const batch = writeBatch(db);
+      pending.forEach((b: any) => {
+          const ref = doc(db, "bets", b.id);
+          if (b.chosenWinner === winner) { batch.update(doc(db, "users", b.bettor), { balance: increment(b.amount * 2) }); batch.update(ref, { status: 'won' }); } 
+          else batch.update(ref, { status: 'lost' });
+      });
+      await batch.commit();
+      if (gameMode === '1vs1' && !m.isBye && winner !== "Esperando...") { await setDoc(doc(db, "ranking", winner), { puntos: increment(3), victorias: increment(1) }, { merge: true }); }
+      let next = [...matches];
+      next = next.map((x: any) => x.id === matchId ? { ...x, score1: s1, score2: s2, winner: winner } : x);
+      const send = (tId: number, slot: 'p1'|'p2', n: string, t: any, c: any) => { if(next[tId]){ next[tId][slot]=n; next[tId][slot==='p1'?'p1Team':'p2Team']=t; next[tId][slot==='p1'?'p1Club':'p2Club']=c; }};
+      const isSmall = matches.length === 4;
+      if (isSmall) { if(matchId===0) { send(2,'p1',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(3,'p1',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); } if(matchId===1) { send(2,'p2',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(3,'p2',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); } }
+      else { if(matchId<=3) send(matchId < 2 ? 4 : 5, matchId % 2 === 0 ? 'p1' : 'p2', winner, isP1?m.p1Team:m.p2Team, isP1?m.p1Club:m.p2Club); if(matchId===4) { send(6,'p1',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(7,'p1',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); } if(matchId===5) { send(6,'p2',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(7,'p2',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); } }
+      await setDoc(doc(db, "sala", "principal"), { fifaMatches: next }, { merge: true });
+      if(matchId === (isSmall ? 2 : 6)) { confetti({particleCount:500}); await addDoc(collection(db,"history"),{winner,winnerTeam:isP1?m.p1Team:m.p2Team,date:serverTimestamp(),type:gameMode}); }
+    } catch (e) { console.error(e); }
+  };
+
+  const limpiarPizarra = async () => {
+      if(!confirm("¿Resetear cuadro?")) return;
+      const b = writeBatch(db); b.set(doc(db,"sala","principal"),{fifaMatches:[], equipoA:[], equipoB:[], ultimoCastigo:"..."}); 
+      const q = query(collection(db, "bets")); (await getDocs(q)).forEach(d=>b.delete(d.ref)); await b.commit(); setShowAdmin(false);
+  };
+
+  return (
+    <div className="w-full max-w-7xl mx-auto px-4 py-6">
+        <div className="flex justify-between items-center mb-8">
+            <div>
+                <h1 className="text-3xl font-black text-black uppercase tracking-tighter italic">FOOTYS <span className="text-blue-600">ARENA</span></h1>
+                <p className="text-gray-500 text-sm font-bold uppercase tracking-widest">{matches.length > 0 ? 'Torneo Oficial en Curso' : 'Sala de Espera'}</p>
+            </div>
+            <button onClick={() => setShowAdmin(!showAdmin)} className="p-2 bg-white border border-gray-200 rounded-full hover:bg-gray-100 transition text-gray-400"><Settings size={20} /></button>
+        </div>
+        {showAdmin && ( <div className="mb-8 p-4 bg-gray-100 border border-gray-300 rounded-xl flex justify-between items-center"><span className="text-xs font-bold text-gray-500 uppercase">Zona de Gestión</span><button onClick={limpiarPizarra} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-700 transition"><Trash2 size={14}/> RESETEAR TORNEO</button></div> )}
+        
+        {matches.length === 0 ? (
+            <div className="bg-white p-8 md:p-12 rounded-3xl border border-gray-200 shadow-xl text-center max-w-3xl mx-auto mt-10">
+                <div className="inline-block p-4 bg-blue-50 rounded-full mb-6"><Settings size={48} className="text-blue-600"/></div>
+                <h2 className="text-4xl font-black mb-2 text-black tracking-tight">PREPARAR TORNEO</h2>
+                <div className="flex justify-center gap-4 mb-8">
+                    <button onClick={()=>setGameMode('1vs1')} className={`px-8 py-3 rounded-full font-black text-sm uppercase tracking-wider transition ${gameMode==='1vs1'?'bg-black text-white shadow-lg':'bg-gray-100 text-gray-400'}`}>1 vs 1</button>
+                    <button onClick={()=>setGameMode('2vs2')} className={`px-8 py-3 rounded-full font-black text-sm uppercase tracking-wider transition ${gameMode==='2vs2'?'bg-black text-white shadow-lg':'bg-gray-100 text-gray-400'}`}>2 vs 2</button>
+                </div>
+                {users.length > 0 ? (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10 text-left">
+                        {users.map((u: any) => (
+                            <button key={u.id} onClick={()=>togglePlayerSelection(u.id)} className={`p-4 rounded-xl border-2 text-sm font-bold truncate transition flex items-center justify-between ${selectedPlayers.includes(u.id)?'bg-blue-600 border-blue-600 text-white shadow-md transform scale-105':'bg-white text-gray-600 border-gray-100 hover:border-gray-300'}`}>{u.id}{selectedPlayers.includes(u.id) && <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>}</button>
+                        ))}
+                    </div>
+                ) : ( <div className="mb-10 p-6 bg-gray-50 rounded-xl border border-gray-100 text-gray-400 text-sm flex flex-col items-center gap-2"><Users size={32} className="opacity-50"/><p>No hay jugadores.</p></div> )}
+                <button onClick={handleCrearTorneo} disabled={users.length < 2} className="w-full md:w-auto px-12 bg-black text-white font-black py-4 rounded-2xl shadow-xl hover:bg-gray-900 transition text-sm uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">🚀 COMENZAR TORNEO ({selectedPlayers.length})</button>
+            </div>
+        ) : (
+            <div className="w-full">
+                <div className="md:hidden flex flex-col gap-8">
+                    <div className="space-y-4"><h3 className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Primera Ronda</h3>{(matches.length===4 ? [0,1] : [0,1,2,3]).map(id => <MatchCard key={id} m={matches[id]} onFinish={finalizarPartido} />)}</div>
+                    {matches.length===8 && (<div className="space-y-4"><h3 className="text-xs font-black text-purple-500 uppercase tracking-widest pl-1">Semifinales</h3>{[4,5].map(id => <MatchCard key={id} m={matches[id]} onFinish={finalizarPartido} />)}</div>)}
+                    <div className="space-y-4 pt-4 border-t-2 border-dashed border-gray-200"><h3 className="text-xs font-black text-yellow-500 uppercase tracking-widest pl-1 text-center">🏆 Gran Final</h3><MatchCard m={matches[matches.length===4 ? 2 : 6]} onFinish={finalizarPartido} isFinal /><h3 className="text-[10px] font-bold text-orange-400 uppercase tracking-widest text-center mt-2">3er Puesto</h3><div className="scale-95 opacity-80"><MatchCard m={matches[matches.length===4 ? 3 : 7]} onFinish={finalizarPartido} /></div></div>
+                </div>
+                <div className="hidden md:grid grid-cols-3 gap-12 items-center">
+                    <div className="space-y-6"><h3 className="text-center font-bold text-gray-400 text-xs uppercase tracking-widest mb-4">Ronda 1</h3>{(matches.length===4 ? [0,1] : [0,1,2,3]).map(id => <MatchCard key={id} m={matches[id]} onFinish={finalizarPartido} />)}</div>
+                    <div className="space-y-6 flex flex-col justify-center">{matches.length===8 && (<><h3 className="text-center font-bold text-purple-500 text-xs uppercase tracking-widest mb-4">Semifinales</h3>{[4,5].map(id => <MatchCard key={id} m={matches[id]} onFinish={finalizarPartido} />)}</>)}</div>
+                    <div className="space-y-8 flex flex-col justify-center"><div><h3 className="text-center font-black text-yellow-500 text-sm uppercase tracking-widest mb-4">🏆 Gran Final</h3><MatchCard m={matches[matches.length===4 ? 2 : 6]} onFinish={finalizarPartido} isFinal /></div><div><h3 className="text-center font-bold text-orange-400 text-xs uppercase tracking-widest mb-2">Bronce</h3><MatchCard m={matches[matches.length===4 ? 3 : 7]} onFinish={finalizarPartido} /></div></div>
+                </div>
+            </div>
+        )}
+    </div>
+  );
+}
+
+function MatchCard({ m, onFinish, isFinal, label }: { m?: any, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean, label?: string }) {
+    const [s1, setS1] = useState(""); const [s2, setS2] = useState("");
+    if (!m) return <div className="bg-gray-100 h-32 rounded-2xl animate-pulse"></div>;
+    const isWaiting = m.p1 === "Esperando..." || m.p2 === "Esperando...";
+    if (m.isBye) return <div className="bg-green-50 border border-green-200 p-4 rounded-2xl flex flex-col items-center justify-center text-center h-full opacity-70"><span className="text-green-700 font-black text-[10px] uppercase mb-1 tracking-widest">Pase Directo</span><p className="font-black text-lg text-green-900">{m.winner}</p></div>;
+    return (
+        <div className={`relative bg-white border-2 ${m.winner ? 'border-gray-200 opacity-60 grayscale' : isFinal ? 'border-yellow-400 shadow-xl shadow-yellow-100' : 'border-gray-100 shadow-lg'} p-5 rounded-2xl overflow-hidden transition-all hover:scale-[1.02]`}>
+            {label && <div className="absolute top-0 right-0 bg-black text-white text-[9px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wider">{label}</div>}
+            <div className="flex justify-between items-center mb-3 pt-2">
+                <div className="overflow-hidden pr-2"><p className={`font-black text-base truncate ${m.winner===m.p1 ? 'text-green-600' : 'text-black'}`}>{m.p1}</p><div className="flex gap-2 text-[10px] font-bold uppercase tracking-wide"><span className="text-gray-400 truncate max-w-[80px]">{m.p1Club || 'Club'}</span><span className="text-blue-600 truncate max-w-[80px]">{m.p1Team}</span></div></div>
+                {m.winner ? <span className="font-mono font-black text-2xl text-black">{m.score1}</span> : <input type="number" className="w-12 h-12 bg-white text-center rounded-xl font-bold text-lg outline-none focus:border-black transition border-2 border-gray-200 text-black shadow-inner" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting} placeholder="0" />}
+            </div>
+            <div className="w-full h-px bg-gray-100 mb-3 flex items-center justify-center"><span className="bg-white px-2 text-[10px] text-gray-300 font-black">VS</span></div>
+            <div className="flex justify-between items-center mb-4">
+                <div className="overflow-hidden pr-2"><p className={`font-black text-base truncate ${m.winner===m.p2 ? 'text-green-600' : 'text-black'}`}>{m.p2}</p><div className="flex gap-2 text-[10px] font-bold uppercase tracking-wide"><span className="text-gray-400 truncate max-w-[80px]">{m.p2Club || 'Club'}</span><span className="text-blue-600 truncate max-w-[80px]">{m.p2Team}</span></div></div>
+                {m.winner ? <span className="font-mono font-black text-2xl text-black">{m.score2}</span> : <input type="number" className="w-12 h-12 bg-white text-center rounded-xl font-bold text-lg outline-none focus:border-black transition border-2 border-gray-200 text-black shadow-inner" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} placeholder="0" />}
+            </div>
+            {!m.winner && !isWaiting && <button onClick={()=>s1&&s2&&onFinish(m.id, +s1, +s2)} className="w-full bg-black text-white text-[10px] font-black py-3 rounded-xl hover:bg-gray-800 transition shadow-lg uppercase tracking-widest">Finalizar Partido</button>}
+        </div>
+    );
+}
