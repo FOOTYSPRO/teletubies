@@ -2,8 +2,9 @@
 import { useState } from 'react';
 import { useApp } from '@/lib/context';
 import { db } from '@/lib/firebase';
-import { doc, setDoc, getDoc, writeBatch, increment } from 'firebase/firestore';
-import { LogOut, Trophy, TrendingUp, History, UserCircle, ShieldCheck, Loader2, AlertTriangle, Send, Wallet } from 'lucide-react';
+import { doc, setDoc, writeBatch, increment } from 'firebase/firestore';
+import { LogOut, Trophy, TrendingUp, History, UserCircle, Loader2, AlertTriangle, Send, Wallet, ChevronLeft, ShoppingBag } from 'lucide-react';
+import Link from 'next/link';
 
 export default function PerfilPage() {
   const { user, users, login, logout, activeBets, ranking, history } = useApp();
@@ -88,8 +89,15 @@ export default function PerfilPage() {
   }
 
   return (
-      <div className="space-y-6 max-w-md mx-auto mt-2 px-4 animate-in slide-in-from-bottom-4">
+      <div className="space-y-6 max-w-md mx-auto px-4 pb-20">
           
+          {/* CABECERA DE NAVEGACIÓN */}
+          <div className="flex justify-between items-center pt-6">
+              <Link href="/" className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition"><ChevronLeft size={20} className="text-black"/></Link>
+              <h1 className="text-lg font-black italic uppercase">MI PERFIL</h1>
+              <Link href="/tienda" className="p-2 bg-black text-white rounded-full hover:bg-gray-800 transition"><ShoppingBag size={20}/></Link>
+          </div>
+
           {/* TARJETA DE USUARIO */}
           <div className="bg-black text-white p-6 rounded-3xl shadow-2xl flex justify-between items-center relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-40 h-40 bg-blue-600 rounded-full blur-3xl opacity-30 group-hover:opacity-50 transition duration-700"></div>
@@ -145,15 +153,16 @@ export default function PerfilPage() {
 
           {/* ESTADÍSTICAS */}
           <div className="grid grid-cols-3 gap-3">
-              <div className="bg-white p-4 rounded-2xl border border-gray-200 text-center shadow-sm"><Trophy className="mx-auto mb-2 text-yellow-500" size={20}/><p className="font-black text-2xl">{ranking.find((r:any)=>r.nombre===user.id)?.victorias||0}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Victorias</p></div>
-              <div className="bg-white p-4 rounded-2xl border border-gray-200 text-center shadow-sm"><TrendingUp className="mx-auto mb-2 text-blue-600" size={20}/><p className="font-black text-2xl">{ranking.find((r:any)=>r.nombre===user.id)?.puntos||0}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Puntos</p></div>
+              {/* Nota: Usamos 'ganados' en lugar de 'victorias' para coincidir con la DB */}
+              <div className="bg-white p-4 rounded-2xl border border-gray-200 text-center shadow-sm"><Trophy className="mx-auto mb-2 text-yellow-500" size={20}/><p className="font-black text-2xl">{ranking.find((r:any)=>r.name===user.id)?.ganados||0}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Victorias</p></div>
+              <div className="bg-white p-4 rounded-2xl border border-gray-200 text-center shadow-sm"><TrendingUp className="mx-auto mb-2 text-blue-600" size={20}/><p className="font-black text-2xl">{ranking.find((r:any)=>r.name===user.id)?.puntos||0}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Puntos</p></div>
               <div className="bg-white p-4 rounded-2xl border border-gray-200 text-center shadow-sm"><History className="mx-auto mb-2 text-purple-600" size={20}/><p className="font-black text-2xl">{history.filter((h:any)=>h.winner===user.id).length}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Torneos</p></div>
           </div>
           
           <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
               <h3 className="font-black text-xs uppercase mb-4 text-gray-400 flex items-center gap-2"><Wallet size={14}/> Mis Apuestas Activas</h3>
               <div className="space-y-2">
-                  {activeBets.filter((b:any)=>b.bettor===user.id && b.status==='pending').map((b:any)=>(<div key={b.id} className="flex justify-between text-xs p-3 bg-gray-50 rounded-xl font-bold border border-gray-100"><span>{b.chosenWinner}</span><span className="text-blue-600">{b.amount}€</span></div>))}
+                  {activeBets.filter((b:any)=>b.bettor===user.id && b.status==='pending').map((b:any)=>(<div key={b.id} className="flex justify-between text-xs p-3 bg-gray-50 rounded-xl font-bold border border-gray-100"><span>{b.type==='combined'?'Combinada':b.chosenWinner}</span><span className="text-blue-600">{b.amount}€</span></div>))}
                   {activeBets.filter((b:any)=>b.bettor===user.id && b.status==='pending').length===0 && <p className="text-xs text-center text-gray-300 italic">No tienes apuestas en juego.</p>}
               </div>
           </div>
