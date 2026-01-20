@@ -5,7 +5,7 @@ import { useApp } from '@/lib/context';
 import { db } from '@/lib/firebase';
 import { doc, setDoc, writeBatch, increment, addDoc, collection, serverTimestamp, query, getDocs } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
-import { Settings, Trash2, Users, Shuffle } from 'lucide-react';
+import { Settings, Trash2, Users, Shuffle, Bot } from 'lucide-react';
 
 const TEAMS_REAL = ["Man. City 🔵", "Real Madrid 👑", "Bayern 🔴", "Liverpool 🔴", "Arsenal 🔴", "Inter ⚫🔵", "PSG 🗼", "Barça 🔵🔴", "Atleti 🔴⚪", "Leverkusen ⚫🔴", "Milan ⚫🔴", "Juve ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Spurs ⚪", "Villa 🦁", "Newcastle ⚫⚪"];
 const BYE_NAME = "Pase Directo ➡️";
@@ -17,84 +17,76 @@ export default function TorneoPage() {
   const [gameMode, setGameMode] = useState<'1vs1' | '2vs2'>('1vs1');
   const [showAdmin, setShowAdmin] = useState(false); 
 
-  // --- SELECCIÓN ---
+  // --- GESTIÓN JUGADORES ---
   const togglePlayerSelection = (name: string) => {
       if (selectedPlayers.includes(name)) setSelectedPlayers(selectedPlayers.filter(p => p !== name));
       else { if (selectedPlayers.length >= 16) return alert("Máximo 16 jugadores."); setSelectedPlayers([...selectedPlayers, name]); }
   };
 
-  // --- GENERAR BRACKET INTELIGENTE ---
-  const generateBracket = (playersInput: string[]) => {
-      let players = [...playersInput];
-      let targetSize = players.length <= 4 ? 4 : 8; // Forzamos 4 u 8
+  const addCpu = () => {
+      if (selectedPlayers.length >= 16) return alert("Máximo 16.");
+      const cpuName = `CPU ${selectedPlayers.filter(p => p.startsWith('CPU')).length + 1}`;
+      setSelectedPlayers([...selectedPlayers, cpuName]);
+  };
+
+  // --- GENERAR BRACKET ---
+  const handleCrearTorneo = async () => {
+      if (selectedPlayers.length < 2) return alert("Mínimo 2 jugadores.");
       
-      // Mezclamos jugadores y equipos
+      let players = [...selectedPlayers];
+      // Forzamos siempre a 4 u 8 para que el cuadro sea simétrico
+      let targetSize = players.length <= 4 ? 4 : 8; 
+      
+      // Rellenamos con PASE DIRECTO si no llegamos al número exacto
+      while (players.length < targetSize) players.push(BYE_NAME);
+
       const shuffledP = [...players].sort(() => Math.random() - 0.5);
       const shuffledT = [...TEAMS_REAL].sort(() => Math.random() - 0.5);
 
-      // Algoritmo de distribución equilibrada (Seed placement)
-      // Colocamos a los jugadores reales primero en las posiciones "Cabezas de serie" (0, 2, 4, 6...)
-      // para asegurar que los BYEs (huecos) se emparejen con jugadores y no entre ellos si es posible.
-      let bracketSlots = Array(targetSize).fill(BYE_NAME);
-      
-      // Llenamos las posiciones pares primero (0, 2, 4, 6)
-      let pIndex = 0;
-      for (let i = 0; i < targetSize; i += 2) {
-          if (pIndex < shuffledP.length) bracketSlots[i] = shuffledP[pIndex++];
-      }
-      // Llenamos las impares (1, 3, 5, 7) con los que sobran
-      for (let i = 1; i < targetSize; i += 2) {
-          if (pIndex < shuffledP.length) bracketSlots[i] = shuffledP[pIndex++];
-      }
-
-      // Función auxiliar para datos
-      const getMatchData = (name: string, idx: number) => {
+      const getMatchData = (idx: number) => {
+          const name = shuffledP[idx];
           const isBye = name === BYE_NAME;
+          const isCpu = name.startsWith("CPU");
+          
+          // Buscar datos si es usuario real
           const u = users.find((user: any) => user.id === name);
+          
+          let clubName = "Invitado";
+          if (isCpu) clubName = "IA Legendaria 🤖";
+          else if (u) clubName = u.clubName;
+
           return { 
               name: name, 
               team: isBye ? null : shuffledT[idx], 
-              club: isBye ? null : (u?.clubName || "Invitado") 
+              club: isBye ? null : clubName
           };
       };
 
       let newMatches: any[] = [];
       
-      // Generar Estructura
+      // Lógica de generación de cuadro (4 u 8)
       if (targetSize === 4) {
           newMatches = [
-              { id: 0, p1: getMatchData(bracketSlots[0],0).name, p1Team: getMatchData(bracketSlots[0],0).team, p1Club: getMatchData(bracketSlots[0],0).club, p2: getMatchData(bracketSlots[1],1).name, p2Team: getMatchData(bracketSlots[1],1).team, p2Club: getMatchData(bracketSlots[1],1).club, round: 'S' },
-              { id: 1, p1: getMatchData(bracketSlots[2],2).name, p1Team: getMatchData(bracketSlots[2],2).team, p1Club: getMatchData(bracketSlots[2],2).club, p2: getMatchData(bracketSlots[3],3).name, p2Team: getMatchData(bracketSlots[3],3).team, p2Club: getMatchData(bracketSlots[3],3).club, round: 'S' },
+              { id: 0, p1: getMatchData(0).name, p1Team: getMatchData(0).team, p1Club: getMatchData(0).club, p2: getMatchData(1).name, p2Team: getMatchData(1).team, p2Club: getMatchData(1).club, round: 'S' },
+              { id: 1, p1: getMatchData(2).name, p1Team: getMatchData(2).team, p1Club: getMatchData(2).club, p2: getMatchData(3).name, p2Team: getMatchData(3).team, p2Club: getMatchData(3).club, round: 'S' },
               { id: 2, p1: "Esperando...", p2: "Esperando...", round: 'F' }, 
               { id: 3, p1: "Esperando...", p2: "Esperando...", round: '3rd' }
           ];
       } else {
-          // Cuadro de 8
-          for (let i = 0; i < 4; i++) {
-              newMatches.push({
-                  id: i,
-                  p1: getMatchData(bracketSlots[i*2], i*2).name,
-                  p1Team: getMatchData(bracketSlots[i*2], i*2).team,
-                  p1Club: getMatchData(bracketSlots[i*2], i*2).club,
-                  p2: getMatchData(bracketSlots[i*2+1], i*2+1).name,
-                  p2Team: getMatchData(bracketSlots[i*2+1], i*2+1).team,
-                  p2Club: getMatchData(bracketSlots[i*2+1], i*2+1).club,
-                  round: 'Q'
-              });
-          }
-          // Semis y Finales placeholder
-          newMatches.push({ id: 4, p1: "Esperando...", p2: "Esperando...", round: 'S' });
-          newMatches.push({ id: 5, p1: "Esperando...", p2: "Esperando...", round: 'S' });
-          newMatches.push({ id: 6, p1: "Esperando...", p2: "Esperando...", round: 'F' });
-          newMatches.push({ id: 7, p1: "Esperando...", p2: "Esperando...", round: '3rd' });
+          newMatches = [
+              { id: 0, p1: getMatchData(0).name, p1Team: getMatchData(0).team, p1Club: getMatchData(0).club, p2: getMatchData(1).name, p2Team: getMatchData(1).team, p2Club: getMatchData(1).club, round: 'Q' },
+              { id: 1, p1: getMatchData(2).name, p1Team: getMatchData(2).team, p1Club: getMatchData(2).club, p2: getMatchData(3).name, p2Team: getMatchData(3).team, p2Club: getMatchData(3).club, round: 'Q' },
+              { id: 2, p1: getMatchData(4).name, p1Team: getMatchData(4).team, p1Club: getMatchData(4).club, p2: getMatchData(5).name, p2Team: getMatchData(5).team, p2Club: getMatchData(5).club, round: 'Q' },
+              { id: 3, p1: getMatchData(6).name, p1Team: getMatchData(6).team, p1Club: getMatchData(6).club, p2: getMatchData(7).name, p2Team: getMatchData(7).team, p2Club: getMatchData(7).club, round: 'Q' },
+              { id: 4, p1: "Esperando...", p2: "Esperando...", round: 'S' }, { id: 5, p1: "Esperando...", p2: "Esperando...", round: 'S' },
+              { id: 6, p1: "Esperando...", p2: "Esperando...", round: 'F' }, { id: 7, p1: "Esperando...", p2: "Esperando...", round: '3rd' }
+          ];
       }
 
-      // Propagar BYEs iniciales
-      newMatches.forEach(m => { 
-          if(m.p2===BYE_NAME){ m.winner=m.p1; m.isBye=true; } 
-          else if(m.p1===BYE_NAME){ m.winner=m.p2; m.isBye=true; } 
-      });
+      // Propagar Pases Directos (BYE)
+      newMatches.forEach(m => { if(m.p2===BYE_NAME){m.winner=m.p1;m.isBye=true} else if(m.p1===BYE_NAME){m.winner=m.p2;m.isBye=true} });
       
+      // Función para mover ganadores
       const propagate = (tIdx: number, slot: 'p1'|'p2', s: any) => {
         const wKey = s.winner===s.p1?'p1':'p2';
         newMatches[tIdx][slot] = s.winner!;
@@ -112,57 +104,24 @@ export default function TorneoPage() {
           if(newMatches[3].winner) propagate(5,'p2',newMatches[3]); 
       }
 
-      return newMatches.map(m => JSON.parse(JSON.stringify(m, (k, v) => v === undefined ? null : v)));
+      // Guardar en Firebase
+      const clean = newMatches.map(m => JSON.parse(JSON.stringify(m, (k, v) => v === undefined ? null : v)));
+      await setDoc(doc(db, "sala", "principal"), { fifaMatches: clean }, { merge: true });
   };
 
-  const handleCrearTorneo = async () => {
-      if (selectedPlayers.length < 2) return alert("Selecciona al menos 2 jugadores.");
-      const cleanMatches = generateBracket(selectedPlayers);
-      await setDoc(doc(db, "sala", "principal"), { fifaMatches: cleanMatches, activePlayers: selectedPlayers }, { merge: true });
-  };
-
-  const handleResortear = async () => {
-      if(!confirm("¿Barajar emparejamientos de nuevo?")) return;
-      // Recuperamos los jugadores activos desde la DB si existen, o usamos el estado local
-      let playersToShuffle = selectedPlayers;
-      
-      // Intentamos leer de la DB para saber quiénes estaban jugando
-      try {
-        const docSnap = await getDocs(query(collection(db, "sala"))); // Hack simple
-        // Lo ideal es leer el documento, pero como tenemos 'matches' en context, podemos inferir
-        // Mejor usamos la lista seleccionada. Si está vacía (F5), pedimos re-seleccionar.
-        if (playersToShuffle.length < 2) {
-             // Intento de recuperar jugadores de los partidos actuales
-             const currentNames = new Set<string>();
-             matches.forEach((m:any) => {
-                 if(m.p1 && m.p1 !== "Esperando..." && m.p1 !== BYE_NAME) currentNames.add(m.p1);
-                 if(m.p2 && m.p2 !== "Esperando..." && m.p2 !== BYE_NAME) currentNames.add(m.p2);
-             });
-             playersToShuffle = Array.from(currentNames);
-        }
-      } catch(e) {}
-
-      if (playersToShuffle.length < 2) return alert("No hay jugadores seleccionados para resortear.");
-      
-      const cleanMatches = generateBracket(playersToShuffle);
-      const b = writeBatch(db);
-      b.set(doc(db, "sala", "principal"), { fifaMatches: cleanMatches }, { merge: true });
-      
-      // Limpiar apuestas del torneo anterior para evitar conflictos
-      const q = query(collection(db, "bets")); 
-      const s = await getDocs(q); s.forEach(d=>b.delete(d.ref));
-      
-      await b.commit();
-      setShowAdmin(false);
-  };
-
+  // --- LÓGICA DE PARTIDO (Igual que antes) ---
   const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
-    if (s1 === s2) return alert("❌ En eliminatorias no hay empate.");
+    if (s1 === s2) return alert("❌ Empate prohibido.");
     const m = matches.find((x: any) => x.id === matchId);
     if (!m) return;
     const isP1 = s1 > s2;
     const winner = isP1 ? m.p1 : m.p2;
+    
+    // Si el ganador es una CPU, no hacemos apuestas ni ranking
+    const winnerIsCpu = winner.startsWith("CPU");
+
     try {
+      // 1. Apuestas (Solo si es usuario real vs usuario real o si apostaste al ganador)
       const pending = activeBets.filter((b: any) => b.matchId === matchId && b.status === 'pending');
       const batch = writeBatch(db);
       pending.forEach((b: any) => {
@@ -173,15 +132,34 @@ export default function TorneoPage() {
           } else batch.update(ref, { status: 'lost' });
       });
       await batch.commit();
-      if (gameMode === '1vs1' && !m.isBye && winner !== "Esperando...") { await setDoc(doc(db, "ranking", winner), { puntos: increment(3), victorias: increment(1) }, { merge: true }); }
+
+      // 2. Ranking (Solo usuarios reales puntúan)
+      if (!winnerIsCpu && gameMode === '1vs1' && !m.isBye && winner !== "Esperando...") { 
+          await setDoc(doc(db, "ranking", winner), { puntos: increment(3), victorias: increment(1) }, { merge: true }); 
+      }
+      
+      // 3. Avanzar Ronda
       let next = [...matches];
       next = next.map((x: any) => x.id === matchId ? { ...x, score1: s1, score2: s2, winner: winner } : x);
+
       const send = (tId: number, slot: 'p1'|'p2', n: string, t: any, c: any) => { if(next[tId]){ next[tId][slot]=n; next[tId][slot==='p1'?'p1Team':'p2Team']=t; next[tId][slot==='p1'?'p1Club':'p2Club']=c; }};
       const isSmall = matches.length === 4;
-      if (isSmall) { if(matchId===0) { send(2,'p1',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(3,'p1',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); } if(matchId===1) { send(2,'p2',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(3,'p2',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); } }
-      else { if(matchId<=3) send(matchId < 2 ? 4 : 5, matchId % 2 === 0 ? 'p1' : 'p2', winner, isP1?m.p1Team:m.p2Team, isP1?m.p1Club:m.p2Club); if(matchId===4) { send(6,'p1',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(7,'p1',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); } if(matchId===5) { send(6,'p2',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(7,'p2',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); } }
+      if (isSmall) {
+          if(matchId===0) { send(2,'p1',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(3,'p1',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); }
+          if(matchId===1) { send(2,'p2',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(3,'p2',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); }
+      } else {
+          if(matchId<=3) send(matchId < 2 ? 4 : 5, matchId % 2 === 0 ? 'p1' : 'p2', winner, isP1?m.p1Team:m.p2Team, isP1?m.p1Club:m.p2Club);
+          if(matchId===4) { send(6,'p1',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(7,'p1',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); }
+          if(matchId===5) { send(6,'p2',winner,isP1?m.p1Team:m.p2Team,isP1?m.p1Club:m.p2Club); send(7,'p2',isP1?m.p2:m.p1, isP1?m.p2Team:m.p1Team, isP1?m.p2Club:m.p1Club); }
+      }
+
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: next }, { merge: true });
-      if(matchId === (isSmall ? 2 : 6)) { confetti({particleCount:500}); await addDoc(collection(db,"history"),{winner,winnerTeam:isP1?m.p1Team:m.p2Team,date:serverTimestamp(),type:gameMode}); }
+      
+      const finalId = isSmall ? 2 : 6;
+      if(matchId===finalId) { 
+          if(!winnerIsCpu) confetti({particleCount:500}); 
+          await addDoc(collection(db,"history"),{winner,winnerTeam:isP1?m.p1Team:m.p2Team,date:serverTimestamp(),type:gameMode}); 
+      }
     } catch (e) { console.error(e); }
   };
 
@@ -201,41 +179,58 @@ export default function TorneoPage() {
             <button onClick={() => setShowAdmin(!showAdmin)} className="p-2 bg-white border border-gray-200 rounded-full hover:bg-gray-100 transition text-gray-400"><Settings size={20} /></button>
         </div>
         
-        {/* ADMIN PANEL MEJORADO */}
+        {/* PANEL ADMIN */}
         {showAdmin && ( 
             <div className="mb-8 p-4 bg-gray-100 border border-gray-300 rounded-xl flex flex-wrap gap-4 justify-between items-center animate-in slide-in-from-top-2">
                 <span className="text-xs font-bold text-gray-500 uppercase">Zona de Gestión</span>
-                <div className="flex gap-2">
-                    {matches.length > 0 && (
-                        <button onClick={handleResortear} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition">
-                            <Shuffle size={14}/> RE-SORTEAR
-                        </button>
-                    )}
-                    <button onClick={limpiarPizarra} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-700 transition">
-                        <Trash2 size={14}/> BORRAR TODO
-                    </button>
-                </div>
+                <button onClick={limpiarPizarra} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-700 transition">
+                    <Trash2 size={14}/> RESETEAR TORNEO
+                </button>
             </div> 
         )}
         
+        {/* --- MODO SELECCIÓN --- */}
         {matches.length === 0 ? (
             <div className="bg-white p-8 md:p-12 rounded-3xl border border-gray-200 shadow-xl text-center max-w-3xl mx-auto mt-10">
                 <div className="inline-block p-4 bg-blue-50 rounded-full mb-6"><Settings size={48} className="text-blue-600"/></div>
                 <h2 className="text-4xl font-black mb-2 text-black tracking-tight">PREPARAR TORNEO</h2>
+                <p className="text-gray-400 text-sm font-bold uppercase tracking-widest mb-6">Selecciona {8 - selectedPlayers.length} jugadores más para cuadro completo</p>
+                
                 <div className="flex justify-center gap-4 mb-8">
-                    <button onClick={()=>setGameMode('1vs1')} className={`px-8 py-3 rounded-full font-black text-sm uppercase tracking-wider transition ${gameMode==='1vs1'?'bg-black text-white shadow-lg':'bg-gray-100 text-gray-400'}`}>1 vs 1</button>
-                    <button onClick={()=>setGameMode('2vs2')} className={`px-8 py-3 rounded-full font-black text-sm uppercase tracking-wider transition ${gameMode==='2vs2'?'bg-black text-white shadow-lg':'bg-gray-100 text-gray-400'}`}>2 vs 2</button>
+                    <button onClick={()=>setGameMode('1vs1')} className={`px-6 py-2 rounded-full font-black text-sm uppercase tracking-wider transition ${gameMode==='1vs1'?'bg-black text-white':'bg-gray-100 text-gray-400'}`}>1 vs 1</button>
+                    <button onClick={()=>setGameMode('2vs2')} className={`px-6 py-2 rounded-full font-black text-sm uppercase tracking-wider transition ${gameMode==='2vs2'?'bg-black text-white':'bg-gray-100 text-gray-400'}`}>2 vs 2</button>
                 </div>
-                {users.length > 0 ? (
+
+                {/* BOTÓN MÁGICO: AÑADIR CPU */}
+                <button onClick={addCpu} className="mb-6 flex items-center gap-2 mx-auto bg-purple-100 text-purple-700 px-6 py-3 rounded-xl font-bold text-xs uppercase hover:bg-purple-200 transition">
+                    <Bot size={18}/> Añadir CPU / Relleno
+                </button>
+
+                {/* LISTA DE JUGADORES */}
+                {users.length > 0 || selectedPlayers.some(p => p.startsWith('CPU')) ? (
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10 text-left">
                         {users.map((u: any) => (
-                            <button key={u.id} onClick={()=>togglePlayerSelection(u.id)} className={`p-4 rounded-xl border-2 text-sm font-bold truncate transition flex items-center justify-between ${selectedPlayers.includes(u.id)?'bg-blue-600 border-blue-600 text-white shadow-md transform scale-105':'bg-white text-gray-600 border-gray-100 hover:border-gray-300'}`}>{u.id}{selectedPlayers.includes(u.id) && <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>}</button>
+                            <button key={u.id} onClick={()=>togglePlayerSelection(u.id)} className={`p-4 rounded-xl border-2 text-sm font-bold truncate transition flex items-center justify-between ${selectedPlayers.includes(u.id)?'bg-blue-600 border-blue-600 text-white shadow-md transform scale-105':'bg-white text-gray-600 border-gray-100 hover:border-gray-300'}`}>
+                                {u.id}
+                                {selectedPlayers.includes(u.id) && <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>}
+                            </button>
+                        ))}
+                        {/* MOSTRAR CPUs SELECCIONADAS */}
+                        {selectedPlayers.filter(p => p.startsWith('CPU')).map(cpu => (
+                            <button key={cpu} onClick={()=>togglePlayerSelection(cpu)} className="p-4 rounded-xl border-2 text-sm font-bold truncate transition flex items-center justify-between bg-purple-600 border-purple-600 text-white shadow-md transform scale-105">
+                                {cpu}
+                                <Bot size={14}/>
+                            </button>
                         ))}
                     </div>
-                ) : ( <div className="mb-10 p-6 bg-gray-50 rounded-xl border border-gray-100 text-gray-400 text-sm flex flex-col items-center gap-2"><Users size={32} className="opacity-50"/><p>No hay jugadores.</p></div> )}
-                <button onClick={handleCrearTorneo} disabled={users.length < 2} className="w-full md:w-auto px-12 bg-black text-white font-black py-4 rounded-2xl shadow-xl hover:bg-gray-900 transition text-sm uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">🚀 COMENZAR TORNEO ({selectedPlayers.length})</button>
+                ) : ( <div className="mb-10 p-6 bg-gray-50 rounded-xl border border-gray-100 text-gray-400 text-sm flex flex-col items-center gap-2"><Users size={32} className="opacity-50"/><p>No hay jugadores registrados.</p></div> )}
+                
+                <button onClick={handleCrearTorneo} disabled={selectedPlayers.length < 2} className="w-full md:w-auto px-12 bg-black text-white font-black py-4 rounded-2xl shadow-xl hover:bg-gray-900 transition transform hover:scale-[1.02] active:scale-95 text-sm uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">
+                    🚀 COMENZAR TORNEO ({selectedPlayers.length})
+                </button>
             </div>
         ) : (
+            // --- MODO CUADRO (VISTA IGUAL QUE ANTES) ---
             <div className="w-full">
                 <div className="md:hidden flex flex-col gap-8">
                     <div className="space-y-4"><h3 className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Primera Ronda</h3>{(matches.length===4 ? [0,1] : [0,1,2,3]).map(id => <MatchCard key={id} m={matches[id]} onFinish={finalizarPartido} />)}</div>
@@ -253,6 +248,7 @@ export default function TorneoPage() {
   );
 }
 
+// ... MatchCard component sigue igual ...
 function MatchCard({ m, onFinish, isFinal, label }: { m?: any, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean, label?: string }) {
     const [s1, setS1] = useState(""); const [s2, setS2] = useState("");
     if (!m) return <div className="bg-gray-100 h-32 rounded-2xl animate-pulse"></div>;
