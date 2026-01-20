@@ -19,11 +19,9 @@ export default function ApuestasPage() {
   const poorest = useMemo(() => users.length ? [...users].sort((a,b) => a.balance - b.balance)[0] : null, [users]);
   
   // --- FILTROS DE APUESTAS ---
-  // Lógica: Si el partido ha empezado (started=true), solo muestro mis apuestas.
   const pendingBets = activeBets.filter((b:any) => {
       if (b.status !== 'pending') return false;
       const match = matches.find((m:any) => m.id === b.matchId);
-      // Si el partido está empezado, Ocultar si no soy yo
       if (match?.started && b.bettor !== user?.id) return false;
       return true;
   });
@@ -35,11 +33,14 @@ export default function ApuestasPage() {
 
   // --- DETECCIÓN DE ESTADO DEL PARTIDO ---
   const currentMatch = matches.find((m:any) => m.id === selectedMatchId);
+  
   const isUserPlaying = useMemo(() => {
       if (!currentMatch || !user) return false;
-      const p1 = currentMatch.p1 || "";
-      const p2 = currentMatch.p2 || "";
-      return p1 === user.id || p2 === user.id || p1.includes(user.id) || p2.includes(user.id);
+      // Convertimos "Pepe & Juan" en ["Pepe", "Juan"] para comprobar nombres exactos
+      const p1Parts = currentMatch.p1 ? currentMatch.p1.split(' & ') : [];
+      const p2Parts = currentMatch.p2 ? currentMatch.p2.split(' & ') : [];
+      const allPlayers = [...p1Parts, ...p2Parts];
+      return allPlayers.includes(user.id);
   }, [currentMatch, user]);
 
   const isMarketClosed = currentMatch?.started;
@@ -62,9 +63,12 @@ export default function ApuestasPage() {
   };
 
   const toggleSelection = (type: 'winner'|'goals', value: string) => {
-      if (!selectedMatchId || isUserPlaying || isMarketClosed) return;
+      // CORRECCIÓN AQUÍ: Usamos (selectedMatchId === null) en vez de (!selectedMatchId) para permitir el ID 0
+      if (selectedMatchId === null || isUserPlaying || isMarketClosed) return;
+      
       const { odd } = getOddsInfo(selectedMatchId, value, type);
       const exists = selections.find(s => s.type === type && s.value === value);
+      
       if (exists) {
           setSelections(selections.filter(s => !(s.type === type && s.value === value)));
       } else {
@@ -140,10 +144,18 @@ export default function ApuestasPage() {
               
               {matches.length > 0 ? (
                   <div className="space-y-6">
-                      <select className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200 text-black text-xs font-bold outline-none uppercase tracking-wide" onChange={e=>{setSelectedMatchId(parseInt(e.target.value));setSelections([]);}}>
+                      <select 
+                        className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200 text-black text-xs font-bold outline-none uppercase tracking-wide" 
+                        onChange={e => {
+                            const val = e.target.value;
+                            setSelectedMatchId(val === "" ? null : parseInt(val));
+                            setSelections([]);
+                        }}
+                      >
                           <option value="">👇 Seleccionar Partido</option>
-                          {/* FILTRO: Solo partidos NO ganados y NO empezados */}
-                          {matches.filter((m:any) => !m.winner && !m.isBye && !m.started && m.p1 !== "Esperando...").map((m:any) => (<option key={m.id} value={m.id}>{m.p1} vs {m.p2}</option>))}
+                          {matches.filter((m:any) => !m.winner && !m.isBye && !m.started && m.p1 !== "Esperando...").map((m:any) => (
+                              <option key={m.id} value={m.id}>{m.p1} vs {m.p2}</option>
+                          ))}
                       </select>
 
                       {isUserPlaying && (
@@ -153,7 +165,6 @@ export default function ApuestasPage() {
                           </div>
                       )}
 
-                      {/* MENSAJE SI EL PARTIDO ESTÁ EMPEZADO (Si alguien lo seleccionó antes de empezar) */}
                       {isMarketClosed && (
                           <div className="bg-gray-100 border-2 border-gray-200 p-4 rounded-2xl flex items-center gap-3">
                               <Lock className="text-gray-500" size={24} />
