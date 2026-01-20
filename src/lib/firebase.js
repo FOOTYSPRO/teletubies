@@ -1,21 +1,22 @@
-﻿// src/lib/firebase.ts
-import { initializeApp, getApps, getApp } from "firebase/app";
+﻿import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage"; // <--- IMPORTANTE
 
+// ⚠️ SUSTITUYE ESTO CON TUS DATOS REALES DE FIREBASE
+// (Copia y pega tal cual te lo da Firebase, con las comillas)
 const firebaseConfig = {
-  // ... TUS CLAVES DE FIREBASE AQUÍ (NO LAS BORRES) ...
-  apiKey: "...",
-  authDomain: "...",
-  projectId: "...",
-  storageBucket: "...",
-  messagingSenderId: "...",
-  appId: "..."
+  apiKey: "AIzaSyD.... (TU API KEY LARGA)",
+  authDomain: "teletubies-....firebaseapp.com",
+  projectId: "teletubies-....",
+  storageBucket: "teletubies-....appspot.com",
+  messagingSenderId: "123456...",
+  appId: "1:123456..."
 };
 
-// Inicializar Firebase (Singleton)
+// Inicialización segura (evita errores al recargar)
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
-const storage = getStorage(app); // <--- INICIALIZAR STORAGE
 
-export { db, storage }; // <--- EXPORTAR AMBOS
+// Chivato para ver si carga en la consola (F12)
+console.log("🔥 Firebase Iniciado con Project ID:", firebaseConfig.projectId);
+
+export { db };
