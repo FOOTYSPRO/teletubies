@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/lib/context';
 import { db } from '@/lib/firebase';
 import { doc, addDoc, collection, setDoc, increment, serverTimestamp } from 'firebase/firestore';
-import { Lock, Coins, Crown, TrendingDown, Zap, CheckCheck, Layers, Calculator, Info } from 'lucide-react';
+import { Lock, Coins, Crown, TrendingDown, Zap, CheckCheck, Layers, Calculator } from 'lucide-react';
 import Link from 'next/link';
 
 // 🔥 AHORA EL MERCADO ES MÁS SENSIBLE (Antes 500, ahora 50)
@@ -30,7 +30,6 @@ export default function ApuestasPage() {
       const realTargetPool = marketBets.filter((b:any) => b.chosenWinner === target).reduce((acc: number, b:any) => acc + b.amount, 0); 
       
       // 2. Dinero VIRTUAL (La Banca) para que no empiece en 0
-      // Imaginamos que hay 50€ en cada opción para empezar en x2.0
       const virtualTotal = realTotalPool + (LIQUIDITY * 2);
       const virtualTarget = realTargetPool + LIQUIDITY;
 
@@ -155,14 +154,29 @@ export default function ApuestasPage() {
                                       <OddBtn target={currentMatch.p2} odd={getOddsInfo(currentMatch.id, currentMatch.p2, 'winner').odd} active={isSelected('winner', currentMatch.p2)} onClick={()=>toggleSelection('winner', currentMatch.p2)} />
                                   </div>
                               </div>
+                              
+                              {/* --- GOLES (1.5 / 2.5 / 3.5 / 4.5) --- */}
                               <div>
                                   <div className="flex justify-between items-center mb-2">
-                                      <h3 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1"><Layers size={12}/> Total Goles</h3>
+                                      <h3 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1"><Layers size={12}/> Goles (1.5 - 4.5)</h3>
                                       <span className="text-[9px] bg-gray-100 px-2 rounded text-gray-400">Total apostado: {getOddsInfo(currentMatch.id, 'Mas de 2.5', 'goals').totalPool}€</span>
                                   </div>
-                                  <div className="grid grid-cols-2 gap-3">
+                                  <div className="grid grid-cols-2 gap-2">
+                                      {/* 1.5 */}
+                                      <OddBtn target="Mas de 1.5" odd={getOddsInfo(currentMatch.id, 'Mas de 1.5', 'goals').odd} active={isSelected('goals', 'Mas de 1.5')} onClick={()=>toggleSelection('goals', 'Mas de 1.5')} />
+                                      <OddBtn target="Menos de 1.5" odd={getOddsInfo(currentMatch.id, 'Menos de 1.5', 'goals').odd} active={isSelected('goals', 'Menos de 1.5')} onClick={()=>toggleSelection('goals', 'Menos de 1.5')} />
+
+                                      {/* 2.5 */}
                                       <OddBtn target="Mas de 2.5" odd={getOddsInfo(currentMatch.id, 'Mas de 2.5', 'goals').odd} active={isSelected('goals', 'Mas de 2.5')} onClick={()=>toggleSelection('goals', 'Mas de 2.5')} />
                                       <OddBtn target="Menos de 2.5" odd={getOddsInfo(currentMatch.id, 'Menos de 2.5', 'goals').odd} active={isSelected('goals', 'Menos de 2.5')} onClick={()=>toggleSelection('goals', 'Menos de 2.5')} />
+
+                                      {/* 3.5 */}
+                                      <OddBtn target="Mas de 3.5" odd={getOddsInfo(currentMatch.id, 'Mas de 3.5', 'goals').odd} active={isSelected('goals', 'Mas de 3.5')} onClick={()=>toggleSelection('goals', 'Mas de 3.5')} />
+                                      <OddBtn target="Menos de 3.5" odd={getOddsInfo(currentMatch.id, 'Menos de 3.5', 'goals').odd} active={isSelected('goals', 'Menos de 3.5')} onClick={()=>toggleSelection('goals', 'Menos de 3.5')} />
+
+                                      {/* 4.5 */}
+                                      <OddBtn target="Mas de 4.5" odd={getOddsInfo(currentMatch.id, 'Mas de 4.5', 'goals').odd} active={isSelected('goals', 'Mas de 4.5')} onClick={()=>toggleSelection('goals', 'Mas de 4.5')} />
+                                      <OddBtn target="Menos de 4.5" odd={getOddsInfo(currentMatch.id, 'Menos de 4.5', 'goals').odd} active={isSelected('goals', 'Menos de 4.5')} onClick={()=>toggleSelection('goals', 'Menos de 4.5')} />
                                   </div>
                               </div>
                           </div>
@@ -212,7 +226,6 @@ export default function ApuestasPage() {
                       </div>
                   )) : <p className="text-center text-gray-300 text-xs italic py-4">Sin datos.</p>
               )}
-              {/* Omitido History y Ranking porque son iguales al anterior, pero asegurate de que estén en tu archivo final */}
               {activeTab === 'history' && globalHistory.length > 0 && globalHistory.map((b:any) => (
                   <div key={b.id} className={`p-4 rounded-2xl border flex justify-between items-center bg-white border-gray-100 shadow-sm ${b.status==='won'?'bg-green-50 !border-green-200':'bg-red-50 !border-red-200'}`}>
                       <div>
