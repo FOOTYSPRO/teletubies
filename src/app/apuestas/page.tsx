@@ -3,11 +3,11 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/lib/context';
 import { db } from '@/lib/firebase';
 import { doc, addDoc, collection, setDoc, increment, serverTimestamp } from 'firebase/firestore';
-import { Lock, Coins, Crown, TrendingDown, Zap, CheckCheck, Layers, Calculator } from 'lucide-react';
+import { Lock, Coins, Crown, TrendingDown, Zap, CheckCheck, Layers, Calculator, Info } from 'lucide-react';
 import Link from 'next/link';
 
-// CONSTANTE DE ESTABILIDAD (Evita cuotas locas)
-const LIQUIDITY = 500; 
+// 🔥 AHORA EL MERCADO ES MÁS SENSIBLE (Antes 500, ahora 50)
+const LIQUIDITY = 50; 
 
 export default function ApuestasPage() {
   const { user, users, matches, activeBets } = useApp();
@@ -21,32 +21,33 @@ export default function ApuestasPage() {
   const pendingBets = activeBets.filter((b:any) => b.status === 'pending');
   const globalHistory = activeBets.filter((b:any) => b.status !== 'pending').sort((a:any, b:any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
 
-  // --- CUOTAS ESTABILIZADAS ---
-  const getOdds = (matchId: number, target: string, currentMarket: string) => {
-      // 1. Dinero REAL apostado
+  // --- CUOTAS DINÁMICAS (ALGORITMO MEJORADO) ---
+  const getOddsInfo = (matchId: number, target: string, currentMarket: string) => {
+      // 1. Dinero REAL apostado en este mercado concreto (Ganador o Goles)
       const marketBets = activeBets.filter((b:any) => b.matchId === matchId && b.type === currentMarket && b.status === 'pending');
+      
       const realTotalPool = marketBets.reduce((acc: number, b:any) => acc + b.amount, 0); 
       const realTargetPool = marketBets.filter((b:any) => b.chosenWinner === target).reduce((acc: number, b:any) => acc + b.amount, 0); 
       
-      // 2. Dinero VIRTUAL (La Banca) para estabilizar
-      // Suponemos que hay 2 opciones (Gana/Pierde o Mas/Menos), así que metemos LIQUIDITY a cada lado.
+      // 2. Dinero VIRTUAL (La Banca) para que no empiece en 0
+      // Imaginamos que hay 50€ en cada opción para empezar en x2.0
       const virtualTotal = realTotalPool + (LIQUIDITY * 2);
       const virtualTarget = realTargetPool + LIQUIDITY;
 
-      // 3. Cálculo Cuota: Total / Opción
+      // 3. Cálculo
       const rawOdd = virtualTotal / virtualTarget;
       
-      // Recortamos margen (x1.05 mínimo, x10.0 máximo para seguridad)
+      // Límites: Nunca menos de x1.05 ni más de x10.0
       let finalOdd = parseFloat(rawOdd.toFixed(2));
       if (finalOdd < 1.05) finalOdd = 1.05;
       if (finalOdd > 10.0) finalOdd = 10.0;
       
-      return finalOdd;
+      return { odd: finalOdd, totalPool: realTotalPool };
   };
 
   const toggleSelection = (type: 'winner'|'goals', value: string) => {
       if (!selectedMatchId) return;
-      const odd = getOdds(selectedMatchId, value, type);
+      const { odd } = getOddsInfo(selectedMatchId, value, type);
       const exists = selections.find(s => s.type === type && s.value === value);
       
       if (exists) {
@@ -78,7 +79,7 @@ export default function ApuestasPage() {
           await addDoc(collection(db, "bets"), { 
               matchId: selectedMatchId, 
               bettor: user.id, 
-              type: 'combined',
+              type: 'combined', // Siempre lo guardamos como combined para simplificar
               selections: selections, 
               amount: betAmount, 
               finalOdd: totalOdd, 
@@ -86,7 +87,7 @@ export default function ApuestasPage() {
               timestamp: serverTimestamp() 
           });
           
-          alert(`✅ Combinada x${totalOdd} realizada!`);
+          alert(`✅ Apuesta realizada (x${totalOdd})`);
           setSelections([]);
           setActiveTab('active');
       } catch (e) { alert("Error al apostar"); }
@@ -145,17 +146,23 @@ export default function ApuestasPage() {
                       {currentMatch && (
                           <div className="animate-in slide-in-from-bottom-4 space-y-6">
                               <div>
-                                  <h3 className="text-[10px] font-black uppercase text-gray-400 mb-2 flex items-center gap-1"><Layers size={12}/> Ganador</h3>
+                                  <div className="flex justify-between items-center mb-2">
+                                      <h3 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1"><Layers size={12}/> Ganador</h3>
+                                      <span className="text-[9px] bg-gray-100 px-2 rounded text-gray-400">Total apostado: {getOddsInfo(currentMatch.id, currentMatch.p1, 'winner').totalPool}€</span>
+                                  </div>
                                   <div className="grid grid-cols-2 gap-3">
-                                      <OddBtn target={currentMatch.p1} odd={getOdds(currentMatch.id, currentMatch.p1, 'winner')} active={isSelected('winner', currentMatch.p1)} onClick={()=>toggleSelection('winner', currentMatch.p1)} />
-                                      <OddBtn target={currentMatch.p2} odd={getOdds(currentMatch.id, currentMatch.p2, 'winner')} active={isSelected('winner', currentMatch.p2)} onClick={()=>toggleSelection('winner', currentMatch.p2)} />
+                                      <OddBtn target={currentMatch.p1} odd={getOddsInfo(currentMatch.id, currentMatch.p1, 'winner').odd} active={isSelected('winner', currentMatch.p1)} onClick={()=>toggleSelection('winner', currentMatch.p1)} />
+                                      <OddBtn target={currentMatch.p2} odd={getOddsInfo(currentMatch.id, currentMatch.p2, 'winner').odd} active={isSelected('winner', currentMatch.p2)} onClick={()=>toggleSelection('winner', currentMatch.p2)} />
                                   </div>
                               </div>
                               <div>
-                                  <h3 className="text-[10px] font-black uppercase text-gray-400 mb-2 flex items-center gap-1"><Layers size={12}/> Total Goles</h3>
+                                  <div className="flex justify-between items-center mb-2">
+                                      <h3 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1"><Layers size={12}/> Total Goles</h3>
+                                      <span className="text-[9px] bg-gray-100 px-2 rounded text-gray-400">Total apostado: {getOddsInfo(currentMatch.id, 'Mas de 2.5', 'goals').totalPool}€</span>
+                                  </div>
                                   <div className="grid grid-cols-2 gap-3">
-                                      <OddBtn target="Mas de 2.5" odd={getOdds(currentMatch.id, 'Mas de 2.5', 'goals')} active={isSelected('goals', 'Mas de 2.5')} onClick={()=>toggleSelection('goals', 'Mas de 2.5')} />
-                                      <OddBtn target="Menos de 2.5" odd={getOdds(currentMatch.id, 'Menos de 2.5', 'goals')} active={isSelected('goals', 'Menos de 2.5')} onClick={()=>toggleSelection('goals', 'Menos de 2.5')} />
+                                      <OddBtn target="Mas de 2.5" odd={getOddsInfo(currentMatch.id, 'Mas de 2.5', 'goals').odd} active={isSelected('goals', 'Mas de 2.5')} onClick={()=>toggleSelection('goals', 'Mas de 2.5')} />
+                                      <OddBtn target="Menos de 2.5" odd={getOddsInfo(currentMatch.id, 'Menos de 2.5', 'goals').odd} active={isSelected('goals', 'Menos de 2.5')} onClick={()=>toggleSelection('goals', 'Menos de 2.5')} />
                                   </div>
                               </div>
                           </div>
@@ -179,6 +186,7 @@ export default function ApuestasPage() {
               ) : ( <div className="text-center py-6 text-gray-400 font-bold text-xs uppercase">Mercado Cerrado</div> )}
           </div>
 
+          {/* TABS */}
           <div className="flex bg-gray-200 p-1 rounded-2xl overflow-x-auto">
               <button onClick={() => setActiveTab('active')} className={`flex-1 py-3 px-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'active' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>🔥 En Juego</button>
               <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 px-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'history' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>🌍 Historial</button>
@@ -204,7 +212,24 @@ export default function ApuestasPage() {
                       </div>
                   )) : <p className="text-center text-gray-300 text-xs italic py-4">Sin datos.</p>
               )}
-              {/* Omitido History y Ranking (sin cambios) */}
+              {/* Omitido History y Ranking porque son iguales al anterior, pero asegurate de que estén en tu archivo final */}
+              {activeTab === 'history' && globalHistory.length > 0 && globalHistory.map((b:any) => (
+                  <div key={b.id} className={`p-4 rounded-2xl border flex justify-between items-center bg-white border-gray-100 shadow-sm ${b.status==='won'?'bg-green-50 !border-green-200':'bg-red-50 !border-red-200'}`}>
+                      <div>
+                          <div className="flex items-center gap-2 mb-1"><span className="font-black text-xs uppercase text-black">{b.bettor}</span></div>
+                          <p className="text-[10px] text-gray-500 font-bold">{b.type==='combined'?'Combinada':b.chosenWinner}</p>
+                      </div>
+                      <span className={`font-mono font-black text-sm ${b.status==='won'?'text-green-600':'text-red-500'}`}>{b.status==='won'?'+':''}{b.status==='won' ? Math.floor(b.amount * parseFloat(b.finalOdd||'2')) - b.amount : -b.amount}€</span>
+                  </div>
+              ))}
+              {activeTab === 'ranking' && (
+                  <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+                      <table className="w-full text-left">
+                          <thead className="bg-gray-50 border-b border-gray-100"><tr><th className="p-4 text-[10px] font-black text-gray-400 uppercase">Pos</th><th className="p-4 text-[10px] font-black text-gray-400 uppercase">Jugador</th><th className="p-4 text-[10px] font-black text-gray-400 uppercase text-right">Profit</th></tr></thead>
+                          <tbody className="divide-y divide-gray-100">{bettingStats.map((stat:any, idx:number)=>(<tr key={stat.name}><td className="p-4 text-xs font-bold text-gray-500">#{idx+1}</td><td className="p-4 font-black text-xs uppercase">{stat.name}</td><td className={`p-4 text-right font-mono font-black text-sm ${stat.profit>=0?'text-green-600':'text-red-500'}`}>{Math.round(stat.profit)}€</td></tr>))}</tbody>
+                      </table>
+                  </div>
+              )}
           </div>
       </div>
   );
