@@ -91,7 +91,7 @@ export default function TorneoPage() {
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: clean }, { merge: true });
   };
 
-  // --- LÓGICA DE FINALIZAR CON APUESTAS AVANZADAS ---
+  // --- LÓGICA DE FINALIZAR CON APUESTAS AVANZADAS Y CUOTAS DINÁMICAS ---
   const finalizarPartido = async (matchId: number, s1: number, s2: number, corners: number) => {
     if (s1 === s2) return alert("❌ En eliminatorias no hay empate.");
     const m = matches.find((x: any) => x.id === matchId);
@@ -103,34 +103,61 @@ export default function TorneoPage() {
     const totalGoals = s1 + s2;
 
     try {
-      // RESOLVER APUESTAS (Ganador, Goles, Corners)
       const pending = activeBets.filter((b: any) => b.matchId === matchId && b.status === 'pending');
       const batch = writeBatch(db);
       
+      // 1. CALCULAR LOS BOTES (POOLS) PARA CUOTAS DINÁMICAS
+      const pools: any = { winner: 0, goals: 0, corners: 0 };
+      const winningPools: any = { winner: 0, goals: 0, corners: 0 };
+
+      // Fase de cálculo
+      pending.forEach((b: any) => {
+          const type = b.type || 'winner';
+          pools[type] += b.amount; // Dinero total en la mesa
+
+          // Simular si ganaría para sumar al bote ganador
+          let isVirtualWin = false;
+          if (type === 'winner' && b.chosenWinner === winner) isVirtualWin = true;
+          else if (type === 'goals') {
+             if (b.chosenWinner.includes('Mas') && totalGoals > (b.chosenWinner.includes('3.5')?3.5:2.5)) isVirtualWin = true;
+             else if (b.chosenWinner.includes('Menos') && totalGoals < (b.chosenWinner.includes('3.5')?3.5:2.5)) isVirtualWin = true;
+          }
+          else if (type === 'corners') {
+             if (b.chosenWinner.includes('Mas') && corners > 5.5) isVirtualWin = true;
+             else if (b.chosenWinner.includes('Menos') && corners < 5.5) isVirtualWin = true;
+          }
+          if (isVirtualWin) winningPools[type] += b.amount;
+      });
+      
+      // 2. REPARTIR PREMIOS
       pending.forEach((b: any) => {
           const ref = doc(db, "bets", b.id);
+          const type = b.type || 'winner';
           let won = false;
 
-          // 1. Apuesta a GANADOR
-          if (!b.type || b.type === 'winner') {
-              if (b.chosenWinner === winner) won = true;
+          // Verificar victoria real
+          if (type === 'winner' && b.chosenWinner === winner) won = true;
+          else if (type === 'goals') {
+             if (b.chosenWinner.includes('Mas') && totalGoals > (b.chosenWinner.includes('3.5')?3.5:2.5)) won = true;
+             else if (b.chosenWinner.includes('Menos') && totalGoals < (b.chosenWinner.includes('3.5')?3.5:2.5)) won = true;
           }
-          // 2. Apuesta a GOLES
-          else if (b.type === 'goals') {
-             if (b.chosenWinner === 'Mas de 2.5 Goles' && totalGoals > 2.5) won = true;
-             else if (b.chosenWinner === 'Menos de 2.5 Goles' && totalGoals < 2.5) won = true;
-             else if (b.chosenWinner === 'Mas de 3.5 Goles' && totalGoals > 3.5) won = true;
-             else if (b.chosenWinner === 'Menos de 3.5 Goles' && totalGoals < 3.5) won = true;
-          }
-          // 3. Apuesta a CORNERS
-          else if (b.type === 'corners') {
-             if (b.chosenWinner === 'Mas de 5.5 Corners' && corners > 5.5) won = true;
-             else if (b.chosenWinner === 'Menos de 5.5 Corners' && corners < 5.5) won = true;
+          else if (type === 'corners') {
+             if (b.chosenWinner.includes('Mas') && corners > 5.5) won = true;
+             else if (b.chosenWinner.includes('Menos') && corners < 5.5) won = true;
           }
 
           if (won) {
-              batch.update(doc(db, "users", b.bettor), { balance: increment(b.amount * 2) }); 
-              batch.update(ref, { status: 'won' });
+              // CÁLCULO DE CUOTA FINAL: (Total / Ganadores)
+              // Si eres el único, te llevas todo (xTotal/xTuApuesta). Mínimo x1.05
+              const totalMoney = pools[type];
+              const winnersMoney = winningPools[type];
+              let odd = winnersMoney > 0 ? (totalMoney / winnersMoney) : 1;
+              if (odd < 1.05) odd = 1.05; // Seguridad para que siempre ganes algo
+
+              const profit = Math.floor(b.amount * odd);
+              
+              batch.update(doc(db, "users", b.bettor), { balance: increment(profit) }); 
+              batch.update(ref, { status: 'won', finalOdd: odd.toFixed(2) });
           } else {
               batch.update(ref, { status: 'lost' });
           }
