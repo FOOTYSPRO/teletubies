@@ -151,7 +151,7 @@ export default function ApuestasPage() {
                           <div className="bg-red-50 border-2 border-red-100 p-4 rounded-2xl flex items-center gap-3 animate-pulse">
                               <Ban className="text-red-500" size={24} />
                               <div>
-                                  <p className="text-red-800 font-black text-xs uppercase">Conflicto de intereses</p>
+                                  <p className="text-red-800 font-black text-xs uppercase">No eres Kike Salas</p>
                                   <p className="text-red-600 text-[10px] font-bold">No puedes apostar en un partido donde juegas.</p>
                               </div>
                           </div>
