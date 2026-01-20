@@ -5,7 +5,8 @@ import { useApp } from '@/lib/context';
 import { db } from '@/lib/firebase';
 import { doc, setDoc, writeBatch, increment, addDoc, collection, serverTimestamp, query, getDocs, onSnapshot } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
-import { Settings, Trash2, Users, Bot, UserPlus, Trophy, Ban, Skull, Shield } from 'lucide-react';
+import { Settings, Trash2, Users, Bot, UserPlus, Trophy, Ban, Skull, Shield, ShoppingBag } from 'lucide-react';
+import Link from 'next/link'; // <--- ¡ESTA ERA LA LÍNEA QUE FALTABA!
 
 const TEAMS_REAL = ["Arsenal 🔴", "Inter ⚫🔵", "Barça 🔵🔴", "Atleti 🔴⚪", "PSV", "Leverkusen ⚫🔴", "Juve ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Spurs ⚪", "Villa 🦁", "Newcastle ⚫⚪", "Sporting", "Mónaco", "Leipzig"];
 const BYE_NAME = "Pase Directo ➡️";
@@ -112,11 +113,9 @@ export default function TorneoPage() {
           } else { batch.update(ref, { status: 'lost' }); }
       });
 
-      // --- 🔥 3. RANKING (ACTUALIZADO: PARTIDOS JUGADOS Y GANADOS) ---
-      // Función auxiliar para actualizar stats de un jugador
+      // --- RANKING ---
       const updateStats = (player: string, isWinner: boolean) => {
           if (player.includes("CPU") || player === "Esperando..." || player === BYE_NAME) return;
-          
           if (player.includes(" & ")) {
               const [p1, p2] = player.split(" & ");
               if (!p1.includes("CPU")) batch.set(doc(db, "ranking", p1), { jugados: increment(1), ganados: isWinner ? increment(1) : increment(0) }, { merge: true });
@@ -127,11 +126,11 @@ export default function TorneoPage() {
       };
 
       if (!m.isBye) {
-          updateStats(winner, true);  // Ganador: +1 Jugado, +1 Ganado
-          updateStats(loser, false);  // Perdedor: +1 Jugado, +0 Ganado
+          updateStats(winner, true);  
+          updateStats(loser, false); 
       }
 
-      // 4. PREMIOS Y AVANCE
+      // PREMIOS
       const isSmall = matches.length <= 4;
       const finalId = isSmall ? 2 : 6;
       
@@ -214,24 +213,9 @@ function MatchCard({ m, onFinish, isFinal, powerups }: { m?: any, onFinish: (id:
     return (
         <div className={`relative bg-white p-6 rounded-3xl overflow-hidden transition-all ${cardStyle}`}>
             {isFinal && !m.winner && <div className="absolute top-0 right-0 bg-yellow-400 text-black text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-widest shadow-sm flex items-center gap-1"><Trophy size={10}/> GRAN FINAL</div>}
-            
-            <div className="flex justify-between items-center mb-4 pt-2">
-                <div className="overflow-hidden pr-2">
-                    <p className={`font-black text-lg truncate ${m.winner===m.p1 ? 'text-green-600' : 'text-black'}`}>{m.p1}</p>
-                    <div className="flex gap-2 text-[10px] font-bold uppercase opacity-80"><span className="text-blue-600">{m.p1Team}</span></div>
-                    <div className="flex gap-1 mt-1">{getPowerups(m.p1).map((p:any, i:number) => (<span key={i} className="text-[9px] bg-red-100 text-red-700 px-1 rounded border border-red-200 flex items-center gap-1" title={p.name}>{p.type==='veto' && <Ban size={10}/>} {p.type==='injury' && <Skull size={10}/>} {p.type==='insurance' && <Shield size={10}/>} {p.name}</span>))}</div>
-                </div>
-                {m.winner ? <span className="font-mono font-black text-3xl">{m.score1}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black border-2 border-gray-100" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting} />}
-            </div>
+            <div className="flex justify-between items-center mb-4 pt-2"><div className="overflow-hidden pr-2"><p className={`font-black text-lg truncate ${m.winner===m.p1 ? 'text-green-600' : 'text-black'}`}>{m.p1}</p><div className="flex gap-2 text-[10px] font-bold uppercase opacity-80"><span className="text-blue-600">{m.p1Team}</span></div><div className="flex gap-1 mt-1">{getPowerups(m.p1).map((p:any, i:number) => (<span key={i} className="text-[9px] bg-red-100 text-red-700 px-1 rounded border border-red-200 flex items-center gap-1" title={p.name}>{p.type==='veto' && <Ban size={10}/>} {p.type==='injury' && <Skull size={10}/>} {p.type==='insurance' && <Shield size={10}/>} {p.name}</span>))}</div></div>{m.winner ? <span className="font-mono font-black text-3xl">{m.score1}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black border-2 border-gray-100" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting} />}</div>
             <div className="w-full h-px bg-gray-200 mb-4 flex items-center justify-center"><span className="bg-white px-2 text-xs text-gray-400 font-black italic">VS</span></div>
-            <div className="flex justify-between items-center mb-6">
-                <div className="overflow-hidden pr-2">
-                    <p className={`font-black text-lg truncate ${m.winner===m.p2 ? 'text-green-600' : 'text-black'}`}>{m.p2}</p>
-                    <div className="flex gap-2 text-[10px] font-bold uppercase opacity-80"><span className="text-blue-600">{m.p2Team}</span></div>
-                    <div className="flex gap-1 mt-1">{getPowerups(m.p2).map((p:any, i:number) => (<span key={i} className="text-[9px] bg-red-100 text-red-700 px-1 rounded border border-red-200 flex items-center gap-1" title={p.name}>{p.type==='veto' && <Ban size={10}/>} {p.type==='injury' && <Skull size={10}/>} {p.type==='insurance' && <Shield size={10}/>} {p.name}</span>))}</div>
-                </div>
-                {m.winner ? <span className="font-mono font-black text-3xl">{m.score2}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black border-2 border-gray-100" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} />}
-            </div>
+            <div className="flex justify-between items-center mb-6"><div className="overflow-hidden pr-2"><p className={`font-black text-lg truncate ${m.winner===m.p2 ? 'text-green-600' : 'text-black'}`}>{m.p2}</p><div className="flex gap-2 text-[10px] font-bold uppercase opacity-80"><span className="text-blue-600">{m.p2Team}</span></div><div className="flex gap-1 mt-1">{getPowerups(m.p2).map((p:any, i:number) => (<span key={i} className="text-[9px] bg-red-100 text-red-700 px-1 rounded border border-red-200 flex items-center gap-1" title={p.name}>{p.type==='veto' && <Ban size={10}/>} {p.type==='injury' && <Skull size={10}/>} {p.type==='insurance' && <Shield size={10}/>} {p.name}</span>))}</div></div>{m.winner ? <span className="font-mono font-black text-3xl">{m.score2}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black border-2 border-gray-100" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} />}</div>
             {!m.winner && !isWaiting && (<button onClick={() => { if (s1 === "" || s2 === "") return alert("❌ Introduce el marcador."); onFinish(m.id, +s1, +s2); }} className="w-full bg-black hover:bg-gray-900 text-white text-xs font-black py-4 rounded-2xl transition shadow-md uppercase tracking-widest flex justify-center items-center gap-2">Finalizar Partido →</button>)}
         </div>
     );
