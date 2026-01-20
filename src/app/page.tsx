@@ -7,7 +7,7 @@ import {
   addDoc, serverTimestamp, getDocs, writeBatch, deleteDoc 
 } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
-import { Trophy, Users, Banknote, Dices, Skull, ChevronLeft, ChevronRight, CheckCircle, Search, Settings, LogOut, Lock } from 'lucide-react';
+import { Trophy, Users, Banknote, Dices, Skull, ChevronLeft, ChevronRight, CheckCircle, Search, Settings, LogOut, Lock, Medal, History, TrendingUp } from 'lucide-react';
 
 // --- TIPOS ---
 type Match = { 
@@ -40,7 +40,7 @@ const HERO_SLIDES = [
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-black">Cargando...</div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-black font-bold">Cargando Liga...</div>}>
       <AppContent />
     </Suspense>
   );
@@ -56,6 +56,7 @@ function AppContent() {
   const [fifaMatches, setFifaMatches] = useState<Match[]>([]);
   const [activeBets, setActiveBets] = useState<Bet[]>([]);
   const [ranking, setRanking] = useState<{nombre: string, puntos: number, victorias: number}[]>([]);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   
   // ESTADO INTERFAZ
   const [showSettings, setShowSettings] = useState(false);
@@ -82,6 +83,9 @@ function AppContent() {
   const [pachangaInput, setPachangaInput] = useState("");
   const [equipoA, setEquipoA] = useState<string[]>([]);
   const [equipoB, setEquipoB] = useState<string[]>([]);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [timerActive, setTimerActive] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // LISTENERS
   useEffect(() => {
@@ -102,8 +106,9 @@ function AppContent() {
     });
     const unsubBets = onSnapshot(query(collection(db, "bets")), (snap) => setActiveBets(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Bet[]));
     const unsubRank = onSnapshot(query(collection(db, "ranking"), orderBy("puntos", "desc")), (snap) => setRanking(snap.docs.map(d => ({ nombre: d.id, ...d.data() } as any))));
+    const unsubHist = onSnapshot(query(collection(db, "history"), orderBy("date", "desc")), (snap) => setHistory(snap.docs.map(d => d.data()) as HistoryItem[]));
     
-    return () => { unsubSala(); unsubUsers(); unsubBets(); unsubRank(); };
+    return () => { unsubSala(); unsubUsers(); unsubBets(); unsubRank(); unsubHist(); };
   }, [currentUser?.id]);
 
   // LOGICA AUTH
@@ -242,8 +247,8 @@ function AppContent() {
       setMayorPaliza(p); 
   };
 
-  const girarRuleta = async () => {
-      setIsSpinning(true); const list=["10 Flexiones", "Baila 30s", "Chupito", "Cascada", "Verdad o Reto", "Haz el pino", "Invita una ronda"];
+  const girarRuleta = async (t: 'soft'|'chupito') => {
+      setIsSpinning(true); const list = t==='soft' ? ["10 Flexiones", "Baila 30s", "Silencio", "Verdad o Reto", "Haz el pino", "Invita"] : ["1 Chupito", "2 Chupitos", "Cascada", "Elige compañero", "Te libras", "CHUPITO MORTAL"];
       let i=0; const int=setInterval(()=>{setResultadoRuleta(list[i%list.length]);i++},80);
       setTimeout(async()=>{clearInterval(int);const f=list[Math.floor(Math.random()*list.length)];setResultadoRuleta(f);setIsSpinning(false);await setDoc(doc(db,"sala","principal"),{ultimoCastigo:f},{merge:true});},2000);
   };
@@ -262,10 +267,15 @@ function AppContent() {
       await b.commit(); setShowSettings(false);
   };
 
+  const startTimer = (s: number) => { setTimeLeft(s); setTimerActive(true); };
+  const generarExcusa = () => setExcusa(EXCUSAS[Math.floor(Math.random() * EXCUSAS.length)]);
+
+  useEffect(() => { if(timerActive && timeLeft>0){timerRef.current=setTimeout(()=>setTimeLeft(timeLeft-1),1000)}else if(timeLeft===0&&timerActive){setTimerActive(false);new Audio("https://www.myinstants.com/media/sounds/ding-sound-effect_2.mp3").play().catch(()=>{})}; return()=>clearTimeout(timerRef.current!)},[timeLeft,timerActive]);
+
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', background: '#ffffff', minHeight: '100vh', color: '#111' }}>
         
-        {/* CSS GLOBAL PARA MARQUESINA Y ESTILOS */}
+        {/* CSS GLOBAL */}
         <style dangerouslySetInnerHTML={{__html: `
             @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
             .animate-marquee { animation: marquee 20s linear infinite; }
@@ -277,7 +287,7 @@ function AppContent() {
         {/* HERO CAROUSEL */}
         <HeroCarousel />
 
-        {/* HEADER (MENU SUPERIOR LIMPIO) */}
+        {/* HEADER */}
         <div className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
             <h1 className="text-lg font-black tracking-tighter uppercase italic">TELETUBIES <span className="text-blue-600">LEAGUE</span></h1>
             <div className="flex gap-4">
@@ -296,7 +306,7 @@ function AppContent() {
         {/* CONTENIDO PRINCIPAL */}
         <div className="max-w-4xl mx-auto p-4 pb-24">
             
-            {/* TABS DE NAVEGACION (Estilo Categorías) */}
+            {/* TABS */}
             <div className="flex gap-2 overflow-x-auto hide-scrollbar mb-6 pb-2">
                 {[
                     {id:'fifa', label:'Torneo', icon:<Trophy size={16}/>},
@@ -311,8 +321,99 @@ function AppContent() {
                 ))}
             </div>
 
-            {/* SECCIONES */}
+            {/* --- SECCIONES --- */}
             
+            {/* 🏆 PERFIL DEL JUGADOR (STATS + HISTORIAL) */}
+            {activeTab === 'perfil' && (
+                <div className="fade-in space-y-6">
+                    {!currentUser ? (
+                        <div className="max-w-sm mx-auto bg-white p-8 rounded-3xl border border-gray-100 shadow-xl">
+                            <h2 className="text-2xl font-black text-center mb-6">{isRegistering ? 'NUEVO FICHAJE' : 'ACCESO CLUB'}</h2>
+                            <input className="w-full bg-gray-50 p-4 rounded-xl mb-3 border-none outline-none" placeholder="Nombre" value={isRegistering ? regName : loginName} onChange={e => isRegistering ? setRegName(e.target.value) : setLoginName(e.target.value)} />
+                            {isRegistering && <input className="w-full bg-gray-50 p-4 rounded-xl mb-3 border-none outline-none" placeholder="Club (ej: Aston Birra)" value={regClub} onChange={e => setRegClub(e.target.value)} />}
+                            <input className="w-full bg-gray-50 p-4 rounded-xl mb-6 border-none outline-none" type="password" placeholder="Contraseña" value={isRegistering ? regPass : loginPass} onChange={e => isRegistering ? setRegPass(e.target.value) : setLoginPass(e.target.value)} />
+                            <button onClick={isRegistering ? handleRegister : handleLogin} className="w-full bg-black text-white font-bold p-4 rounded-xl mb-4">{isRegistering ? 'REGISTRARSE' : 'ENTRAR'}</button>
+                            <p className="text-center text-gray-500 text-sm cursor-pointer hover:underline" onClick={() => setIsRegistering(!isRegistering)}>{isRegistering ? '¿Ya tienes cuenta? Entra' : 'Crear una cuenta nueva'}</p>
+                        </div>
+                    ) : (
+                        <>
+                            {/* CABECERA PERFIL */}
+                            <div className="bg-black text-white p-6 rounded-3xl shadow-xl flex justify-between items-center relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-10 -mt-10 blur-xl"></div>
+                                <div className="relative z-10">
+                                    <h2 className="text-3xl font-black italic uppercase">{currentUser.id}</h2>
+                                    <p className="text-gray-400 text-sm font-bold uppercase tracking-widest">{currentUser.clubName}</p>
+                                </div>
+                                <div className="text-right relative z-10">
+                                    <p className="text-xs text-gray-400 uppercase tracking-widest">Saldo</p>
+                                    <p className="text-4xl font-mono font-black text-green-400">{currentUser.balance} €</p>
+                                </div>
+                            </div>
+
+                            {/* ESTADÍSTICAS */}
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm text-center">
+                                    <Trophy className="w-6 h-6 mx-auto mb-2 text-yellow-500" />
+                                    <p className="text-2xl font-black">{ranking.find(r=>r.nombre===currentUser.id)?.victorias || 0}</p>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase">Victorias</p>
+                                </div>
+                                <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm text-center">
+                                    <TrendingUp className="w-6 h-6 mx-auto mb-2 text-blue-500" />
+                                    <p className="text-2xl font-black">{ranking.find(r=>r.nombre===currentUser.id)?.puntos || 0}</p>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase">Puntos</p>
+                                </div>
+                                <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm text-center">
+                                    <History className="w-6 h-6 mx-auto mb-2 text-purple-500" />
+                                    <p className="text-2xl font-black">{history.filter(h => h.winner === currentUser.id).length}</p>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase">Títulos</p>
+                                </div>
+                            </div>
+
+                            {/* VITRINA DE TROFEOS (HISTORIAL) */}
+                            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                <h3 className="font-black text-sm uppercase mb-4 flex items-center gap-2"><Medal size={16}/> Vitrina de Trofeos</h3>
+                                <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                                    {history.filter(h => h.winner === currentUser.id).length > 0 ? (
+                                        history.filter(h => h.winner === currentUser.id).map((h, i) => (
+                                            <div key={i} className="flex justify-between items-center p-3 bg-yellow-50 rounded-xl border border-yellow-100">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-xl">🏆</span>
+                                                    <div>
+                                                        <p className="font-bold text-sm text-yellow-900">Campeón {h.type === '2vs2' ? 'Dobles' : 'Individual'}</p>
+                                                        <p className="text-[10px] text-yellow-700 font-bold uppercase">{h.winnerTeam}</p>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] text-gray-400">{h.date ? new Date(h.date.seconds * 1000).toLocaleDateString() : 'N/A'}</span>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="text-center py-8 text-gray-400 text-sm">Aún no has levantado ninguna copa... 🦗</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* HISTORIAL APUESTAS */}
+                            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                <h3 className="font-black text-sm uppercase mb-4 flex items-center gap-2"><Banknote size={16}/> Historial Apuestas</h3>
+                                <div className="space-y-2">
+                                    {activeBets.filter(b => b.bettor === currentUser.id).map(b => (
+                                        <div key={b.id} className="flex justify-between items-center text-sm p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                            <span>Apostaste a <span className="text-blue-600 font-bold">{b.chosenWinner}</span></span>
+                                            <span className={`font-bold ${b.status==='won'?'text-green-600':b.status==='lost'?'text-red-500':'text-yellow-600'}`}>
+                                                {b.status==='won' ? `+${b.amount*2}€` : b.status==='lost' ? `-${b.amount}€` : 'Pendiente'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                    {activeBets.filter(b => b.bettor === currentUser.id).length === 0 && <p className="text-gray-400 text-xs text-center py-2">Sin apuestas recientes.</p>}
+                                </div>
+                            </div>
+
+                            <button onClick={logout} className="w-full bg-gray-100 text-gray-500 font-bold p-4 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 hover:text-red-500 transition"><LogOut size={16}/> Cerrar Sesión</button>
+                        </>
+                    )}
+                </div>
+            )}
+
             {/* FIFA */}
             {activeTab === 'fifa' && (
                 <div className="fade-in">
@@ -338,16 +439,9 @@ function AppContent() {
                                 <h3 className="font-black text-xl">Cuadro Oficial</h3>
                                 <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-1 rounded">En Juego</span>
                             </div>
-                            
-                            {/* LISTA PARTIDOS (DISEÑO PRODUCTO) */}
                             <div className="grid gap-4 md:grid-cols-2">
-                                {/* Primera Ronda */}
                                 {(fifaMatches.length===4 ? [0,1] : [0,1,2,3]).map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} />)}
-                                
-                                {/* Semis */}
                                 {fifaMatches.length===8 && [4,5].map(id => <MatchCard key={id} m={fifaMatches[id]} onFinish={finalizarPartido} label="SEMIFINAL" />)}
-                                
-                                {/* Final y 3er Puesto */}
                                 <MatchCard m={fifaMatches[fifaMatches.length===4 ? 2 : 6]} onFinish={finalizarPartido} isFinal label="🏆 GRAN FINAL" />
                                 <MatchCard m={fifaMatches[fifaMatches.length===4 ? 3 : 7]} onFinish={finalizarPartido} label="🥉 3er PUESTO" />
                             </div>
@@ -380,48 +474,11 @@ function AppContent() {
                                     </div>
                                 ) : (<p className="text-gray-400 text-center text-sm">No hay partidos disponibles.</p>)}
                             </div>
-                            
                             <div>
                                 <h3 className="font-black text-sm uppercase mb-3">Actividad del Mercado</h3>
-                                <div className="space-y-2">
-                                    {activeBets.filter(b => b.status === 'pending').map(b => (
-                                        <div key={b.id} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center text-sm">
-                                            <div><span className="font-bold">{b.bettor}</span> <span className="text-gray-400">vs</span> <span className="text-blue-600 font-bold">{b.chosenWinner}</span></div>
-                                            <span className="font-mono font-bold bg-gray-100 px-2 py-1 rounded">{b.amount} €</span>
-                                        </div>
-                                    ))}
-                                    {activeBets.filter(b => b.status === 'pending').length === 0 && <p className="text-gray-400 text-xs text-center italic">Todo tranquilo...</p>}
-                                </div>
+                                <div className="space-y-2">{activeBets.filter(b => b.status === 'pending').map(b => (<div key={b.id} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center text-sm"><div><span className="font-bold">{b.bettor}</span> <span className="text-gray-400">vs</span> <span className="text-blue-600 font-bold">{b.chosenWinner}</span></div><span className="font-mono font-bold bg-gray-100 px-2 py-1 rounded">{b.amount} €</span></div>))}{activeBets.filter(b => b.status === 'pending').length === 0 && <p className="text-gray-400 text-xs text-center italic">Todo tranquilo...</p>}</div>
                             </div>
                         </>
-                    )}
-                </div>
-            )}
-
-            {/* PERFIL (LOGIN/DASHBOARD) */}
-            {activeTab === 'perfil' && (
-                <div className="fade-in">
-                    {!currentUser ? (
-                        <div className="max-w-sm mx-auto bg-white p-8 rounded-3xl border border-gray-100 shadow-xl">
-                            <h2 className="text-2xl font-black text-center mb-6">{isRegistering ? 'CREAR CUENTA' : 'ACCESO'}</h2>
-                            <input className="w-full bg-gray-50 p-4 rounded-xl mb-3 border-none outline-none" placeholder="Nombre" value={isRegistering ? regName : loginName} onChange={e => isRegistering ? setRegName(e.target.value) : setLoginName(e.target.value)} />
-                            {isRegistering && <input className="w-full bg-gray-50 p-4 rounded-xl mb-3 border-none outline-none" placeholder="Club (ej: Aston Birra)" value={regClub} onChange={e => setRegClub(e.target.value)} />}
-                            <input className="w-full bg-gray-50 p-4 rounded-xl mb-6 border-none outline-none" type="password" placeholder="Contraseña" value={isRegistering ? regPass : loginPass} onChange={e => isRegistering ? setRegPass(e.target.value) : setLoginPass(e.target.value)} />
-                            <button onClick={isRegistering ? handleRegister : handleLogin} className="w-full bg-black text-white font-bold p-4 rounded-xl mb-4">{isRegistering ? 'REGISTRARSE' : 'ENTRAR'}</button>
-                            <p className="text-center text-gray-500 text-sm cursor-pointer hover:underline" onClick={() => setIsRegistering(!isRegistering)}>{isRegistering ? '¿Ya tienes cuenta? Entra' : 'Crear una cuenta nueva'}</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-6">
-                            <div className="bg-black text-white p-6 rounded-3xl shadow-xl flex justify-between items-center">
-                                <div><h2 className="text-3xl font-black italic uppercase">{currentUser.id}</h2><p className="text-gray-400 text-sm font-bold uppercase">{currentUser.clubName}</p></div>
-                                <div className="text-right"><p className="text-xs text-gray-400 uppercase tracking-widest">Saldo</p><p className="text-4xl font-mono font-black text-green-400">{currentUser.balance}</p></div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm text-center"><p className="text-3xl font-black">{ranking.find(r=>r.nombre===currentUser.id)?.victorias || 0}</p><p className="text-xs text-gray-400 font-bold uppercase">Victorias</p></div>
-                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm text-center"><p className="text-3xl font-black">{ranking.find(r=>r.nombre===currentUser.id)?.puntos || 0}</p><p className="text-xs text-gray-400 font-bold uppercase">Puntos</p></div>
-                            </div>
-                            <button onClick={logout} className="w-full bg-gray-100 text-gray-500 font-bold p-4 rounded-xl flex items-center justify-center gap-2"><LogOut size={16}/> Cerrar Sesión</button>
-                        </div>
                     )}
                 </div>
             )}
@@ -443,15 +500,17 @@ function AppContent() {
                         <h2 className="text-red-500 font-black uppercase tracking-widest mb-2 text-xs">El Castigo Es</h2>
                         <p className={`text-2xl font-black ${isSpinning?'blur-sm text-gray-400':'text-black'}`}>{resultadoRuleta}</p>
                     </div>
+                    <div className="flex justify-center gap-2 font-mono text-xs"><button onClick={()=>startTimer(30)} className="bg-gray-100 px-3 py-1 rounded">30s</button><button onClick={()=>startTimer(60)} className="bg-gray-100 px-3 py-1 rounded">60s</button><button onClick={()=>setTimeLeft(0)} className="bg-red-50 px-3 py-1 rounded text-red-500">Stop</button></div>
+                    <div className="text-5xl font-mono tracking-widest">{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}</div>
                     <button onClick={()=>setExcusa(EXCUSAS[Math.floor(Math.random()*EXCUSAS.length)])} className="text-blue-500 text-xs font-bold hover:underline">Generar Excusa Aleatoria</button>
                     {excusa && <p className="text-gray-500 italic text-sm">"{excusa}"</p>}
-                    <button onClick={girarRuleta} className="w-full bg-red-600 text-white font-black p-4 rounded-xl shadow-lg hover:bg-red-700 transition">GIRAR RULETA ☠️</button>
+                    <div className="grid grid-cols-2 gap-3"><button disabled={isSpinning} onClick={()=>girarRuleta('soft')} className="bg-gray-800 p-4 rounded-xl font-bold text-white">Soft</button><button disabled={isSpinning} onClick={()=>girarRuleta('chupito')} className="bg-red-600 p-4 rounded-xl font-bold text-white shadow-lg shadow-red-900/20">SHOT 🥃</button></div>
                 </div>
             )}
 
         </div>
 
-        {/* SETTINGS MODAL */}
+        {/* MODAL SETTINGS */}
         {showSettings && (
             <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={()=>setShowSettings(false)}>
                 <div className="bg-white p-6 rounded-2xl w-full max-w-xs space-y-3 shadow-2xl" onClick={e=>e.stopPropagation()}>
@@ -462,23 +521,15 @@ function AppContent() {
             </div>
         )}
 
-        {/* EXTRAS FLOTANTES */}
+        {/* FLOTANTES */}
         {mayorPaliza && (<div className="fixed top-20 left-1/2 -translate-x-1/2 w-11/12 max-w-sm bg-black text-white p-4 rounded-xl flex items-center justify-between shadow-2xl z-40 animate-in slide-in-from-top-4 border-l-4 border-pink-500"><div className="text-xs"><p className="text-pink-500 font-bold uppercase">Humillación</p><p>{mayorPaliza.winner} vs {mayorPaliza.loser}</p></div><span className="text-xl font-black italic">{mayorPaliza.result}</span></div>)}
-        
-        {/* MARQUESINA FOOTER */}
-        <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 overflow-hidden z-40 py-2">
-            <div className="animate-marquee whitespace-nowrap flex gap-12">
-                {[...Array(2)].flatMap(() => ["⚽ FIFA TOURNAMENT", "🏆 CHAMPIONS LEAGUE", "💰 PLACE YOUR BETS", "🔥 WIN OR GO HOME"]).map((txt, i) => (
-                    <span key={i} className="text-xs font-black text-gray-300 uppercase tracking-widest">{txt}</span>
-                ))}
-            </div>
-        </div>
+        <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 overflow-hidden z-40 py-2"><div className="animate-marquee whitespace-nowrap flex gap-12">{[...Array(2)].flatMap(() => ["⚽ TELETUBIES LEAGUE", "🏆 CHAMPIONS", "💰 PLACE YOUR BETS", "🔥 WIN OR GO HOME"]).map((txt, i) => (<span key={i} className="text-xs font-black text-gray-300 uppercase tracking-widest">{txt}</span>))}</div></div>
 
     </div>
   );
 }
 
-// --- SUBCOMPONENTES ---
+// --- COMPONENTES AUXILIARES ---
 
 function HeroCarousel() {
     const [current, setCurrent] = useState(0);
@@ -507,8 +558,6 @@ function MatchCard({ m, onFinish, isFinal, label }: { m?: Match, onFinish: (id: 
     return (
         <div className={`relative bg-white border ${m.winner ? 'border-gray-200 opacity-70' : 'border-gray-200 shadow-lg'} p-4 rounded-2xl overflow-hidden`}>
             {label && <div className="absolute top-0 right-0 bg-black text-white text-[9px] font-bold px-2 py-1 rounded-bl-lg uppercase">{label}</div>}
-            
-            {/* EQUIPO 1 */}
             <div className="flex justify-between items-center mb-3 pt-2">
                 <div className="overflow-hidden">
                     <p className={`font-black text-sm truncate ${m.winner===m.p1 ? 'text-green-600' : ''}`}>{m.p1}</p>
@@ -516,10 +565,7 @@ function MatchCard({ m, onFinish, isFinal, label }: { m?: Match, onFinish: (id: 
                 </div>
                 {m.winner ? <span className="font-mono font-black text-xl">{m.score1}</span> : <input type="number" className="w-10 h-10 bg-gray-50 text-center rounded-lg font-bold outline-none focus:ring-2 ring-black transition" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting} />}
             </div>
-
             <div className="w-full h-px bg-gray-100 mb-3"></div>
-
-            {/* EQUIPO 2 */}
             <div className="flex justify-between items-center mb-4">
                 <div className="overflow-hidden">
                     <p className={`font-black text-sm truncate ${m.winner===m.p2 ? 'text-green-600' : ''}`}>{m.p2}</p>
@@ -527,7 +573,6 @@ function MatchCard({ m, onFinish, isFinal, label }: { m?: Match, onFinish: (id: 
                 </div>
                 {m.winner ? <span className="font-mono font-black text-xl">{m.score2}</span> : <input type="number" className="w-10 h-10 bg-gray-50 text-center rounded-lg font-bold outline-none focus:ring-2 ring-black transition" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} />}
             </div>
-
             {!m.winner && !isWaiting && (
                 <button onClick={()=>s1&&s2&&onFinish(m.id, +s1, +s2)} className="w-full bg-black text-white text-xs font-bold py-2 rounded-lg hover:bg-gray-800 transition">FINALIZAR</button>
             )}
