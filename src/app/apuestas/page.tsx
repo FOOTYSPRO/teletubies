@@ -18,16 +18,22 @@ export default function ApuestasPage() {
   const richest = useMemo(() => users.length ? [...users].sort((a,b) => b.balance - a.balance)[0] : null, [users]);
   const poorest = useMemo(() => users.length ? [...users].sort((a,b) => a.balance - b.balance)[0] : null, [users]);
   
-  // --- FILTROS CORREGIDOS ---
-  const pendingBets = activeBets.filter((b:any) => b.status === 'pending');
+  // --- FILTROS DE APUESTAS ---
+  // Lógica: Si el partido ha empezado (started=true), solo muestro mis apuestas.
+  const pendingBets = activeBets.filter((b:any) => {
+      if (b.status !== 'pending') return false;
+      const match = matches.find((m:any) => m.id === b.matchId);
+      // Si el partido está empezado, Ocultar si no soy yo
+      if (match?.started && b.bettor !== user?.id) return false;
+      return true;
+  });
   
-  // HISTORIAL: Mostramos TODO lo que no esté pendiente (para recuperar lo antiguo)
   const globalHistory = activeBets
     .filter((b:any) => b.status !== 'pending') 
     .sort((a:any, b:any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
-    .reverse(); // Lo más nuevo arriba
+    .reverse();
 
-  // --- DETECCIÓN DE JUGADOR EN EL PARTIDO ---
+  // --- DETECCIÓN DE ESTADO DEL PARTIDO ---
   const currentMatch = matches.find((m:any) => m.id === selectedMatchId);
   const isUserPlaying = useMemo(() => {
       if (!currentMatch || !user) return false;
@@ -35,6 +41,8 @@ export default function ApuestasPage() {
       const p2 = currentMatch.p2 || "";
       return p1 === user.id || p2 === user.id || p1.includes(user.id) || p2.includes(user.id);
   }, [currentMatch, user]);
+
+  const isMarketClosed = currentMatch?.started;
 
   // --- CUOTAS DINÁMICAS ---
   const getOddsInfo = (matchId: number, target: string, currentMarket: string) => {
@@ -54,7 +62,7 @@ export default function ApuestasPage() {
   };
 
   const toggleSelection = (type: 'winner'|'goals', value: string) => {
-      if (!selectedMatchId || isUserPlaying) return;
+      if (!selectedMatchId || isUserPlaying || isMarketClosed) return;
       const { odd } = getOddsInfo(selectedMatchId, value, type);
       const exists = selections.find(s => s.type === type && s.value === value);
       if (exists) {
@@ -78,6 +86,7 @@ export default function ApuestasPage() {
   const realizarApuesta = async () => {
       if (!user) return;
       if (isUserPlaying) return alert("⛔ No puedes apostar en tu propio partido.");
+      if (isMarketClosed) return alert("⛔ El partido ya ha empezado. Tarde.");
       if (selectedMatchId === null || selections.length === 0 || betAmount <= 0) return alert("Selecciona algo y pon pasta.");
       if (user.balance < betAmount) return alert(`No tienes ${betAmount}€.`);
 
@@ -97,30 +106,23 @@ export default function ApuestasPage() {
       } catch (e) { alert("Error al apostar"); }
   };
 
-  // --- 🔥 CÁLCULO DE RANKING ROBUSTO ---
+  // --- STATS ---
   const bettingStats = useMemo(() => {
       const stats: any = {};
-      
       activeBets.forEach((b: any) => {
           if (b.status === 'pending') return;
-
           if (!stats[b.bettor]) stats[b.bettor] = { name: b.bettor, profit: 0, wins: 0, total: 0 };
-          
           stats[b.bettor].total++;
           const amount = Number(b.amount) || 0;
-
           if (b.status === 'won') {
               stats[b.bettor].wins++;
-              // Si no hay finalOdd (apuesta antigua), asumimos x2.0
               const finalOdd = b.finalOdd ? parseFloat(b.finalOdd) : 2.0;
               const grossWin = amount * finalOdd;
               stats[b.bettor].profit += (grossWin - amount);
           } else {
-              // Cualquier cosa que no sea 'won' (lost, o undefined antiguo) resta
               stats[b.bettor].profit -= amount;
           }
       });
-
       return Object.values(stats).sort((a:any, b:any) => b.profit - a.profit);
   }, [activeBets]);
 
@@ -140,20 +142,26 @@ export default function ApuestasPage() {
                   <div className="space-y-6">
                       <select className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200 text-black text-xs font-bold outline-none uppercase tracking-wide" onChange={e=>{setSelectedMatchId(parseInt(e.target.value));setSelections([]);}}>
                           <option value="">👇 Seleccionar Partido</option>
-                          {matches.filter((m:any) => !m.winner && !m.isBye && m.p1 !== "Esperando...").map((m:any) => (<option key={m.id} value={m.id}>{m.p1} vs {m.p2}</option>))}
+                          {/* FILTRO: Solo partidos NO ganados y NO empezados */}
+                          {matches.filter((m:any) => !m.winner && !m.isBye && !m.started && m.p1 !== "Esperando...").map((m:any) => (<option key={m.id} value={m.id}>{m.p1} vs {m.p2}</option>))}
                       </select>
 
                       {isUserPlaying && (
                           <div className="bg-red-50 border-2 border-red-100 p-4 rounded-2xl flex items-center gap-3 animate-pulse">
                               <Ban className="text-red-500" size={24} />
-                              <div>
-                                  <p className="text-red-800 font-black text-xs uppercase">Conflicto de intereses</p>
-                                  <p className="text-red-600 text-[10px] font-bold">No puedes apostar en tu propio partido.</p>
-                              </div>
+                              <div><p className="text-red-800 font-black text-xs uppercase">Conflicto de intereses</p><p className="text-red-600 text-[10px] font-bold">No puedes apostar en tu propio partido.</p></div>
                           </div>
                       )}
 
-                      {currentMatch && !isUserPlaying && (
+                      {/* MENSAJE SI EL PARTIDO ESTÁ EMPEZADO (Si alguien lo seleccionó antes de empezar) */}
+                      {isMarketClosed && (
+                          <div className="bg-gray-100 border-2 border-gray-200 p-4 rounded-2xl flex items-center gap-3">
+                              <Lock className="text-gray-500" size={24} />
+                              <div><p className="text-gray-800 font-black text-xs uppercase">Mercado Cerrado</p><p className="text-gray-600 text-[10px] font-bold">El partido ya está en juego.</p></div>
+                          </div>
+                      )}
+
+                      {currentMatch && !isUserPlaying && !isMarketClosed && (
                           <div className="animate-in slide-in-from-bottom-4 space-y-6">
                               <div>
                                   <div className="flex justify-between items-center mb-2"><h3 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1"><Layers size={12}/> Ganador</h3><span className="text-[9px] bg-gray-100 px-2 rounded text-gray-400">Pool: {getOddsInfo(currentMatch.id, currentMatch.p1, 'winner').totalPool}€</span></div>
@@ -162,7 +170,6 @@ export default function ApuestasPage() {
                                       <OddBtn target={currentMatch.p2} odd={getOddsInfo(currentMatch.id, currentMatch.p2, 'winner').odd} active={isSelected('winner', currentMatch.p2)} onClick={()=>toggleSelection('winner', currentMatch.p2)} />
                                   </div>
                               </div>
-                              
                               <div>
                                   <div className="flex justify-between items-center mb-2"><h3 className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1"><Layers size={12}/> Goles (Solo 4.5)</h3><span className="text-[9px] bg-gray-100 px-2 rounded text-gray-400">Pool: {getOddsInfo(currentMatch.id, 'Mas de 4.5', 'goals').totalPool}€</span></div>
                                   <div className="grid grid-cols-2 gap-2">
@@ -173,7 +180,7 @@ export default function ApuestasPage() {
                           </div>
                       )}
 
-                      {!isUserPlaying && currentMatch && (
+                      {!isUserPlaying && currentMatch && !isMarketClosed && (
                           <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 shadow-inner">
                               <div className="flex justify-between items-center mb-3 border-b border-gray-200 pb-2"><span className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1"><Calculator size={12}/> Cuota Total</span><span className="font-mono font-black text-2xl text-purple-600">x{totalOdd}</span></div>
                               <div className="flex gap-2 items-center">
@@ -189,7 +196,6 @@ export default function ApuestasPage() {
           <div className="flex bg-gray-200 p-1 rounded-2xl overflow-x-auto"><button onClick={() => setActiveTab('active')} className={`flex-1 py-3 px-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'active' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>🔥 En Juego</button><button onClick={() => setActiveTab('history')} className={`flex-1 py-3 px-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'history' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>🌍 Historial</button><button onClick={() => setActiveTab('ranking')} className={`flex-1 py-3 px-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'ranking' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>📊 Ranking</button></div>
           
           <div className="space-y-3">
-              {/* VISTA EN JUEGO */}
               {activeTab === 'active' && ( 
                   pendingBets.length > 0 ? pendingBets.map((b:any) => (
                       <div key={b.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center">
@@ -204,46 +210,28 @@ export default function ApuestasPage() {
                   )) : <p className="text-center text-gray-300 text-xs italic py-4">Sin datos.</p>
               )}
 
-              {/* VISTA HISTORIAL */}
               {activeTab === 'history' && (
                   globalHistory.length > 0 ? globalHistory.map((b:any) => (
                       <div key={b.id} className={`p-4 rounded-2xl border flex justify-between items-center bg-white border-gray-100 shadow-sm ${b.status==='won'?'bg-green-50 !border-green-200':'bg-red-50 !border-red-200'}`}>
                           <div>
                               <div className="flex items-center gap-2 mb-1"><span className="font-black text-xs uppercase text-black">{b.bettor}</span></div>
-                              {b.type === 'combined' ? (
-                                  <p className="text-[10px] text-gray-500 font-bold">
-                                      Combinada ({b.selections?.length || '?'} sel.)
-                                  </p>
-                              ) : (
-                                  <p className="text-[10px] text-gray-500 font-bold">{b.chosenWinner}</p>
-                              )}
+                              <p className="text-[10px] text-gray-500 font-bold">{b.type==='combined'?'Combinada':b.chosenWinner}</p>
                           </div>
                           <div className="text-right">
-                              <span className={`font-mono font-black text-sm block ${b.status==='won'?'text-green-600':'text-red-500'}`}>
-                                  {b.status==='won'?'+':'-'}
-                                  {/* Cálculo compatible: Si no hay finalOdd, asumimos x2 para viejas apuestas simples */}
-                                  {b.status==='won' ? Math.floor(Number(b.amount) * parseFloat(b.finalOdd||'2.0')) - Number(b.amount) : Number(b.amount)}€
-                              </span>
+                              <span className={`font-mono font-black text-sm block ${b.status==='won'?'text-green-600':'text-red-500'}`}>{b.status==='won'?'+':'-'}{b.status==='won' ? Math.floor(Number(b.amount) * parseFloat(b.finalOdd||'2.0')) - Number(b.amount) : Number(b.amount)}€</span>
                               <span className="text-[9px] text-gray-400 font-bold uppercase">{b.status==='won'?'WIN':'LOSS'}</span>
                           </div>
                       </div>
                   )) : <div className="text-center py-8 text-gray-300"><AlertCircle className="mx-auto mb-2"/>Sin historial reciente.</div>
               )}
 
-              {/* VISTA RANKING */}
               {activeTab === 'ranking' && (
                   <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden animate-in slide-in-from-bottom-2">
                       <table className="w-full text-left">
                           <thead className="bg-gray-50 border-b border-gray-100"><tr><th className="p-4 text-[10px] font-black text-gray-400 uppercase">Pos</th><th className="p-4 text-[10px] font-black text-gray-400 uppercase">Jugador</th><th className="p-4 text-[10px] font-black text-gray-400 uppercase text-right">Profit</th></tr></thead>
                           <tbody className="divide-y divide-gray-100">
                               {bettingStats.map((stat:any, idx:number)=>(
-                                  <tr key={stat.name} className="hover:bg-gray-50 transition">
-                                      <td className="p-4 text-xs font-bold text-gray-500">#{idx+1}</td>
-                                      <td className="p-4 font-black text-xs uppercase">{stat.name}</td>
-                                      <td className={`p-4 text-right font-mono font-black text-sm ${stat.profit>=0?'text-green-600':'text-red-500'}`}>
-                                          {stat.profit>0?'+':''}{Math.round(stat.profit)}€
-                                      </td>
-                                  </tr>
+                                  <tr key={stat.name} className="hover:bg-gray-50 transition"><td className="p-4 text-xs font-bold text-gray-500">#{idx+1}</td><td className="p-4 font-black text-xs uppercase">{stat.name}</td><td className={`p-4 text-right font-mono font-black text-sm ${stat.profit>=0?'text-green-600':'text-red-500'}`}>{stat.profit>0?'+':''}{Math.round(stat.profit)}€</td></tr>
                               ))}
                               {bettingStats.length === 0 && <tr><td colSpan={3} className="p-6 text-center text-xs text-gray-300">Nadie ha ganado ni perdido nada aún.</td></tr>}
                           </tbody>

@@ -5,8 +5,8 @@ import { useApp } from '@/lib/context';
 import { db } from '@/lib/firebase';
 import { doc, setDoc, writeBatch, increment, addDoc, collection, serverTimestamp, query, getDocs, onSnapshot } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
-import { Settings, Trash2, Users, Bot, UserPlus, Trophy, Ban, Skull, Shield, ShoppingBag } from 'lucide-react';
-import Link from 'next/link'; // <--- ¡ESTA ERA LA LÍNEA QUE FALTABA!
+import { Settings, Trash2, Users, Bot, UserPlus, Trophy, Ban, Skull, Shield, ShoppingBag, PlayCircle } from 'lucide-react';
+import Link from 'next/link';
 
 const TEAMS_REAL = ["Arsenal 🔴", "Inter ⚫🔵", "Barça 🔵🔴", "Atleti 🔴⚪", "PSV", "Leverkusen ⚫🔴", "Juve ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Spurs ⚪", "Villa 🦁", "Newcastle ⚫⚪", "Sporting", "Mónaco", "Leipzig"];
 const BYE_NAME = "Pase Directo ➡️";
@@ -55,6 +55,15 @@ export default function TorneoPage() {
       const clean = newMatches.map(m => JSON.parse(JSON.stringify(m, (k, v) => v === undefined ? null : v)));
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: clean }, { merge: true });
       const q = query(collection(db, "powerups")); const snap = await getDocs(q); const batch = writeBatch(db); snap.forEach(d => batch.delete(d.ref)); await batch.commit();
+  };
+
+  // --- 🆕 EMPEZAR PARTIDO (BLOQUEA APUESTAS) ---
+  const empezarPartido = async (matchId: number) => {
+      if(!confirm("¿Cerrar mercado y empezar partido?")) return;
+      let next = [...matches];
+      // Marcamos started: true
+      next = next.map((x: any) => x.id === matchId ? { ...x, started: true } : x);
+      await setDoc(doc(db, "sala", "principal"), { fifaMatches: next }, { merge: true });
   };
 
   const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
@@ -113,31 +122,25 @@ export default function TorneoPage() {
           } else { batch.update(ref, { status: 'lost' }); }
       });
 
-      // --- RANKING ---
-      const updateStats = (player: string, isWinner: boolean) => {
-          if (player.includes("CPU") || player === "Esperando..." || player === BYE_NAME) return;
-          if (player.includes(" & ")) {
-              const [p1, p2] = player.split(" & ");
-              if (!p1.includes("CPU")) batch.set(doc(db, "ranking", p1), { jugados: increment(1), ganados: isWinner ? increment(1) : increment(0) }, { merge: true });
-              if (!p2.includes("CPU")) batch.set(doc(db, "ranking", p2), { jugados: increment(1), ganados: isWinner ? increment(1) : increment(0) }, { merge: true });
+      if (!winner.includes("CPU") && !m.isBye && winner !== "Esperando...") { 
+          if (winner.includes(" & ")) {
+              const [p1, p2] = winner.split(" & ");
+              if (!p1.includes("CPU")) batch.set(doc(db, "ranking", p1), { jugados: increment(1), ganados: isP1 ? increment(1) : increment(0) }, { merge: true });
+              if (!p2.includes("CPU")) batch.set(doc(db, "ranking", p2), { jugados: increment(1), ganados: isP1 ? increment(1) : increment(0) }, { merge: true });
           } else {
-              batch.set(doc(db, "ranking", player), { jugados: increment(1), ganados: isWinner ? increment(1) : increment(0) }, { merge: true });
+              batch.set(doc(db, "ranking", winner), { jugados: increment(1), ganados: increment(1) }, { merge: true });
           }
-      };
-
-      if (!m.isBye) {
-          updateStats(winner, true);  
-          updateStats(loser, false); 
+          // El perdedor también juega
+          if (!loser.includes("CPU") && !loser.includes(" & ")) {
+             batch.set(doc(db, "ranking", loser), { jugados: increment(1) }, { merge: true });
+          }
       }
 
-      // PREMIOS
       const isSmall = matches.length <= 4;
       const finalId = isSmall ? 2 : 6;
-      
       if (matchId === finalId) {
           if (!winner.includes("CPU")) batch.update(doc(db, "users", winner), { balance: increment(1000) });
           if (!loser.includes("CPU")) batch.update(doc(db, "users", loser), { balance: increment(600) });
-
           const semi1Id = isSmall ? 0 : 4; const semi2Id = isSmall ? 1 : 5; const s1Match = matches[semi1Id]; const s2Match = matches[semi2Id];
           if (s1Match && s2Match && s1Match.winner && s2Match.winner) {
               const loser1 = s1Match.winner === s1Match.p1 ? s1Match.p2 : s1Match.p1; const loser2 = s2Match.winner === s2Match.p1 ? s2Match.p2 : s2Match.p1;
@@ -147,11 +150,8 @@ export default function TorneoPage() {
               if (thirdPlace && !thirdPlace.includes("CPU")) batch.update(doc(db, "users", thirdPlace), { balance: increment(250) });
               alert(`🏆 CAMPEÓN: ${winner}\n🥈 SUBCAMPEÓN: ${loser}\n🥉 3º PUESTO: ${thirdPlace}`);
           } else { alert(`🏆 CAMPEÓN: ${winner}`); }
-
-          if(!winner.includes("CPU")) confetti({particleCount:500}); 
-          await addDoc(collection(db,"history"),{winner,winnerTeam:isP1?m.p1Team:m.p2Team,date:serverTimestamp(),type:gameMode});
+          if(!winner.includes("CPU")) confetti({particleCount:500}); await addDoc(collection(db,"history"),{winner,winnerTeam:isP1?m.p1Team:m.p2Team,date:serverTimestamp(),type:gameMode});
       }
-
       await batch.commit();
 
       if (matchId !== finalId) {
@@ -193,7 +193,7 @@ export default function TorneoPage() {
         ) : (
             <div className="grid gap-8">
                 <div className="space-y-4"><h3 className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Partidos</h3>
-                {(matches.length <= 4 ? [0,1,2] : [0,1,2,3,4,5,6]).map(id => matches[id] && <MatchCard key={id} m={matches[id]} onFinish={finalizarPartido} isFinal={matches.length <= 4 ? id===2 : id===6} powerups={powerups.filter(p => p.matchId === matches[id].id)} />)}
+                {(matches.length <= 4 ? [0,1,2] : [0,1,2,3,4,5,6]).map(id => matches[id] && <MatchCard key={id} m={matches[id]} onFinish={finalizarPartido} onStart={empezarPartido} isFinal={matches.length <= 4 ? id===2 : id===6} powerups={powerups.filter(p => p.matchId === matches[id].id)} />)}
                 </div>
             </div>
         )}
@@ -201,7 +201,7 @@ export default function TorneoPage() {
   );
 }
 
-function MatchCard({ m, onFinish, isFinal, powerups }: { m?: any, onFinish: (id: number, s1: number, s2: number) => void, isFinal?: boolean, powerups: any[] }) {
+function MatchCard({ m, onFinish, onStart, isFinal, powerups }: { m?: any, onFinish: (id: number, s1: number, s2: number) => void, onStart: (id: number) => void, isFinal?: boolean, powerups: any[] }) {
     const [s1, setS1] = useState(""); const [s2, setS2] = useState("");
     if (!m) return null;
     const isWaiting = m.p1 === "Esperando..." || m.p2 === "Esperando...";
@@ -213,10 +213,39 @@ function MatchCard({ m, onFinish, isFinal, powerups }: { m?: any, onFinish: (id:
     return (
         <div className={`relative bg-white p-6 rounded-3xl overflow-hidden transition-all ${cardStyle}`}>
             {isFinal && !m.winner && <div className="absolute top-0 right-0 bg-yellow-400 text-black text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-widest shadow-sm flex items-center gap-1"><Trophy size={10}/> GRAN FINAL</div>}
-            <div className="flex justify-between items-center mb-4 pt-2"><div className="overflow-hidden pr-2"><p className={`font-black text-lg truncate ${m.winner===m.p1 ? 'text-green-600' : 'text-black'}`}>{m.p1}</p><div className="flex gap-2 text-[10px] font-bold uppercase opacity-80"><span className="text-blue-600">{m.p1Team}</span></div><div className="flex gap-1 mt-1">{getPowerups(m.p1).map((p:any, i:number) => (<span key={i} className="text-[9px] bg-red-100 text-red-700 px-1 rounded border border-red-200 flex items-center gap-1" title={p.name}>{p.type==='veto' && <Ban size={10}/>} {p.type==='injury' && <Skull size={10}/>} {p.type==='insurance' && <Shield size={10}/>} {p.name}</span>))}</div></div>{m.winner ? <span className="font-mono font-black text-3xl">{m.score1}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black border-2 border-gray-100" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting} />}</div>
+            
+            <div className="flex justify-between items-center mb-4 pt-2">
+                <div className="overflow-hidden pr-2">
+                    <p className={`font-black text-lg truncate ${m.winner===m.p1 ? 'text-green-600' : 'text-black'}`}>{m.p1}</p>
+                    <div className="flex gap-2 text-[10px] font-bold uppercase opacity-80"><span className="text-blue-600">{m.p1Team}</span></div>
+                    <div className="flex gap-1 mt-1">{getPowerups(m.p1).map((p:any, i:number) => (<span key={i} className="text-[9px] bg-red-100 text-red-700 px-1 rounded border border-red-200 flex items-center gap-1" title={p.name}>{p.type==='veto' && <Ban size={10}/>} {p.type==='injury' && <Skull size={10}/>} {p.type==='insurance' && <Shield size={10}/>} {p.name}</span>))}</div>
+                </div>
+                {m.winner ? <span className="font-mono font-black text-3xl">{m.score1}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black border-2 border-gray-100" value={s1} onChange={e=>setS1(e.target.value)} disabled={isWaiting || !m.started} />}
+            </div>
             <div className="w-full h-px bg-gray-200 mb-4 flex items-center justify-center"><span className="bg-white px-2 text-xs text-gray-400 font-black italic">VS</span></div>
-            <div className="flex justify-between items-center mb-6"><div className="overflow-hidden pr-2"><p className={`font-black text-lg truncate ${m.winner===m.p2 ? 'text-green-600' : 'text-black'}`}>{m.p2}</p><div className="flex gap-2 text-[10px] font-bold uppercase opacity-80"><span className="text-blue-600">{m.p2Team}</span></div><div className="flex gap-1 mt-1">{getPowerups(m.p2).map((p:any, i:number) => (<span key={i} className="text-[9px] bg-red-100 text-red-700 px-1 rounded border border-red-200 flex items-center gap-1" title={p.name}>{p.type==='veto' && <Ban size={10}/>} {p.type==='injury' && <Skull size={10}/>} {p.type==='insurance' && <Shield size={10}/>} {p.name}</span>))}</div></div>{m.winner ? <span className="font-mono font-black text-3xl">{m.score2}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black border-2 border-gray-100" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} />}</div>
-            {!m.winner && !isWaiting && (<button onClick={() => { if (s1 === "" || s2 === "") return alert("❌ Introduce el marcador."); onFinish(m.id, +s1, +s2); }} className="w-full bg-black hover:bg-gray-900 text-white text-xs font-black py-4 rounded-2xl transition shadow-md uppercase tracking-widest flex justify-center items-center gap-2">Finalizar Partido →</button>)}
+            <div className="flex justify-between items-center mb-6">
+                <div className="overflow-hidden pr-2">
+                    <p className={`font-black text-lg truncate ${m.winner===m.p2 ? 'text-green-600' : 'text-black'}`}>{m.p2}</p>
+                    <div className="flex gap-2 text-[10px] font-bold uppercase opacity-80"><span className="text-blue-600">{m.p2Team}</span></div>
+                    <div className="flex gap-1 mt-1">{getPowerups(m.p2).map((p:any, i:number) => (<span key={i} className="text-[9px] bg-red-100 text-red-700 px-1 rounded border border-red-200 flex items-center gap-1" title={p.name}>{p.type==='veto' && <Ban size={10}/>} {p.type==='injury' && <Skull size={10}/>} {p.type==='insurance' && <Shield size={10}/>} {p.name}</span>))}</div>
+                </div>
+                {m.winner ? <span className="font-mono font-black text-3xl">{m.score2}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black border-2 border-gray-100" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting || !m.started} />}
+            </div>
+            
+            {/* BOTONES DE ACCIÓN: EMPEZAR O FINALIZAR */}
+            {!m.winner && !isWaiting && (
+                <div className="space-y-2">
+                    {!m.started ? (
+                        <button onClick={() => onStart(m.id)} className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-black py-4 rounded-2xl transition shadow-md uppercase tracking-widest flex justify-center items-center gap-2">
+                            <PlayCircle size={16}/> Pitido Inicial
+                        </button>
+                    ) : (
+                        <button onClick={() => { if (s1 === "" || s2 === "") return alert("❌ Introduce el marcador."); onFinish(m.id, +s1, +s2); }} className="w-full bg-black hover:bg-gray-900 text-white text-xs font-black py-4 rounded-2xl transition shadow-md uppercase tracking-widest flex justify-center items-center gap-2">
+                            Finalizar Partido →
+                        </button>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
