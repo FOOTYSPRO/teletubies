@@ -7,7 +7,14 @@ import { doc, setDoc, writeBatch, increment, addDoc, collection, serverTimestamp
 import confetti from 'canvas-confetti';
 import { Settings, Trash2, Users, Bot, UserPlus, Trophy } from 'lucide-react';
 
-const TEAMS_REAL = ["Arsenal 🔴", "Inter ⚫🔵", "Barça 🔵🔴", "Atleti 🔴⚪", "PSV", "Leverkusen ⚫🔴", "Juve ⚫⚪", "Dortmund 🟡⚫", "Chelsea 🔵", "Napoli 🔵", "Spurs ⚪", "Villa 🦁", "Newcastle ⚫⚪", "Sporting", "Mónaco","Leipzig" ];
+// 🆕 LISTA DE EQUIPOS ACTUALIZADA
+const TEAMS_REAL = [
+    "Arsenal 🔴", "Inter ⚫🔵", "Barça 🔵🔴", "Atleti 🔴⚪", 
+    "PSV", "Leverkusen ⚫🔴", "Juve ⚫⚪", "Dortmund 🟡⚫", 
+    "Chelsea 🔵", "Napoli 🔵", "Spurs ⚪", "Villa 🦁", 
+    "Newcastle ⚫⚪", "Sporting", "Mónaco", "Leipzig"
+];
+
 const BYE_NAME = "Pase Directo ➡️";
 const LIQUIDITY = 50;
 
@@ -23,7 +30,7 @@ export default function TorneoPage() {
   
   const handleCrearTorneo = async () => { 
       if (gameMode === '1vs1' && selectedPlayers.length < 2) return alert("Mínimo 2.");
-      if (gameMode === '2vs2' && (selectedPlayers.length < 4 || selectedPlayers.length % 2 !== 0)) return alert("Para 2vs2 pares.");
+      if (gameMode === '2vs2' && (selectedPlayers.length < 4 || selectedPlayers.length % 2 !== 0)) return alert("Para 2vs2 necesitáis pares (min 4).");
       let participants = gameMode === '2vs2' ? createTeams(selectedPlayers) : [...selectedPlayers];
       let targetSize = participants.length <= 4 ? 4 : 8; 
       while (participants.length < targetSize) participants.push(BYE_NAME);
@@ -36,48 +43,26 @@ export default function TorneoPage() {
       };
       
       let newMatches: any[] = [];
-      // ELIMINADO EL PARTIDO DEL 3er PUESTO (Index 3 en small, Index 7 en big)
-      if (targetSize === 4) { 
-          newMatches = [ 
-              { id: 0, p1: getMatchData(0).name, p1Team: getMatchData(0).team, p1Club: getMatchData(0).club, p2: getMatchData(1).name, p2Team: getMatchData(1).team, p2Club: getMatchData(1).club, round: 'S' }, 
-              { id: 1, p1: getMatchData(2).name, p1Team: getMatchData(2).team, p1Club: getMatchData(2).club, p2: getMatchData(3).name, p2Team: getMatchData(3).team, p2Club: getMatchData(3).club, round: 'S' }, 
-              { id: 2, p1: "Esperando...", p2: "Esperando...", round: 'F' } // Solo FINAL
-          ]; 
-      } else { 
-          for(let i=0; i<4; i++) newMatches.push({ id: i, p1: getMatchData(i*2).name, p1Team: getMatchData(i*2).team, p1Club: getMatchData(i*2).club, p2: getMatchData(i*2+1).name, p2Team: getMatchData(i*2+1).team, p2Club: getMatchData(i*2+1).club, round: 'Q' }); 
-          newMatches.push({ id: 4, p1: "Esperando...", p2: "Esperando...", round: 'S' }, { id: 5, p1: "Esperando...", p2: "Esperando...", round: 'S' }, { id: 6, p1: "Esperando...", p2: "Esperando...", round: 'F' }); // Solo FINAL
-      }
+      if (targetSize === 4) { newMatches = [ { id: 0, p1: getMatchData(0).name, p1Team: getMatchData(0).team, p1Club: getMatchData(0).club, p2: getMatchData(1).name, p2Team: getMatchData(1).team, p2Club: getMatchData(1).club, round: 'S' }, { id: 1, p1: getMatchData(2).name, p1Team: getMatchData(2).team, p1Club: getMatchData(2).club, p2: getMatchData(3).name, p2Team: getMatchData(3).team, p2Club: getMatchData(3).club, round: 'S' }, { id: 2, p1: "Esperando...", p2: "Esperando...", round: 'F' } ]; } 
+      else { for(let i=0; i<4; i++) newMatches.push({ id: i, p1: getMatchData(i*2).name, p1Team: getMatchData(i*2).team, p1Club: getMatchData(i*2).club, p2: getMatchData(i*2+1).name, p2Team: getMatchData(i*2+1).team, p2Club: getMatchData(i*2+1).club, round: 'Q' }); newMatches.push({ id: 4, p1: "Esperando...", p2: "Esperando...", round: 'S' }, { id: 5, p1: "Esperando...", p2: "Esperando...", round: 'S' }, { id: 6, p1: "Esperando...", p2: "Esperando...", round: 'F' }); }
       
       newMatches.forEach(m => { if(m.p2===BYE_NAME){m.winner=m.p1;m.isBye=true} else if(m.p1===BYE_NAME){m.winner=m.p2;m.isBye=true} });
-      
-      // Propagar PASE DIRECTO (Bye)
-      const propagate = (tIdx: number, slot: 'p1'|'p2', s: any) => {
-        const wKey = s.winner===s.p1?'p1':'p2';
-        newMatches[tIdx][slot] = s.winner!;
-        newMatches[tIdx][slot==='p1'?'p1Team':'p2Team'] = s[wKey==='p1'?'p1Team':'p2Team'] || null;
-        newMatches[tIdx][slot==='p1'?'p1Club':'p2Club'] = s[wKey==='p1'?'p1Club':'p2Club'] || null;
-      };
-      
-      if(targetSize===4) { 
-          if(newMatches[0].winner) propagate(2,'p1',newMatches[0]); 
-          if(newMatches[1].winner) propagate(2,'p2',newMatches[1]); 
-      } else { 
-          if(newMatches[0].winner) propagate(4,'p1',newMatches[0]); if(newMatches[1].winner) propagate(4,'p2',newMatches[1]); 
-          if(newMatches[2].winner) propagate(5,'p1',newMatches[2]); if(newMatches[3].winner) propagate(5,'p2',newMatches[3]); 
-      }
+      const propagate = (tIdx: number, slot: 'p1'|'p2', s: any) => { const wKey = s.winner===s.p1?'p1':'p2'; newMatches[tIdx][slot] = s.winner!; newMatches[tIdx][slot==='p1'?'p1Team':'p2Team'] = s[wKey==='p1'?'p1Team':'p2Team'] || null; newMatches[tIdx][slot==='p1'?'p1Club':'p2Club'] = s[wKey==='p1'?'p1Club':'p2Club'] || null; };
+      if(targetSize===4) { if(newMatches[0].winner) propagate(2,'p1',newMatches[0]); if(newMatches[1].winner) propagate(2,'p2',newMatches[1]); } 
+      else { if(newMatches[0].winner) propagate(4,'p1',newMatches[0]); if(newMatches[1].winner) propagate(4,'p2',newMatches[1]); if(newMatches[2].winner) propagate(5,'p1',newMatches[2]); if(newMatches[3].winner) propagate(5,'p2',newMatches[3]); }
 
       const clean = newMatches.map(m => JSON.parse(JSON.stringify(m, (k, v) => v === undefined ? null : v)));
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: clean }, { merge: true });
   };
 
-  // --- 🔥 FINALIZAR (CON PREMIOS AUTOMÁTICOS) ---
+  // --- 🔥 FINALIZAR ---
   const finalizarPartido = async (matchId: number, s1: number, s2: number) => {
     if (s1 === s2) return alert("❌ En eliminatorias no hay empate.");
     const m = matches.find((x: any) => x.id === matchId);
     if (!m) return;
     const isP1 = s1 > s2;
     const winner = isP1 ? m.p1 : m.p2;
-    const loser = isP1 ? m.p2 : m.p1; // Necesitamos saber quién pierde
+    const loser = isP1 ? m.p2 : m.p1;
     const totalGoals = s1 + s2;
 
     try {
@@ -86,7 +71,6 @@ export default function TorneoPage() {
       const pools: any = { winner: 0, goals: 0 };
       const winningPools: any = { winner: 0, goals: 0 };
 
-      // 1. CÁLCULO DE CUOTAS
       const checkSelection = (type: string, val: string) => {
           if (type === 'winner' && val === winner) return true;
           if (type === 'goals') {
@@ -105,21 +89,17 @@ export default function TorneoPage() {
           }
       });
       
-      // 2. PAGAR APUESTAS
       pending.forEach((b: any) => {
           const ref = doc(db, "bets", b.id);
           let won = false;
           if (b.type === 'combined' && Array.isArray(b.selections)) {
               won = b.selections.every((sel: any) => checkSelection(sel.type, sel.value));
-          } else {
-              won = checkSelection(b.type || 'winner', b.chosenWinner);
-          }
+          } else { won = checkSelection(b.type || 'winner', b.chosenWinner); }
 
           if (won) {
               let odd = 1.0;
-              if (b.type === 'combined') {
-                  odd = parseFloat(b.finalOdd || '1.0');
-              } else {
+              if (b.type === 'combined') { odd = parseFloat(b.finalOdd || '1.0'); } 
+              else {
                   const type = (b.type === 'goals') ? 'goals' : 'winner';
                   const virtualTotal = pools[type] + (LIQUIDITY * 2);
                   const virtualTarget = winningPools[type] + LIQUIDITY;
@@ -129,12 +109,9 @@ export default function TorneoPage() {
               const profit = Math.floor(b.amount * odd);
               batch.update(doc(db, "users", b.bettor), { balance: increment(profit) }); 
               batch.update(ref, { status: 'won', finalOdd: odd.toFixed(2) });
-          } else {
-              batch.update(ref, { status: 'lost' });
-          }
+          } else { batch.update(ref, { status: 'lost' }); }
       });
 
-      // 3. RANKING (Puntos normales por ganar)
       if (!winner.includes("CPU") && !m.isBye && winner !== "Esperando...") { 
           if (winner.includes(" & ")) {
               const [p1, p2] = winner.split(" & ");
@@ -145,58 +122,40 @@ export default function TorneoPage() {
           }
       }
 
-      // 4. PREMIOS Y 3ER PUESTO (Si es la FINAL)
       const isSmall = matches.length <= 4;
       const finalId = isSmall ? 2 : 6;
       
       if (matchId === finalId) {
-          // A) PREMIOS 1º y 2º
           if (!winner.includes("CPU")) batch.update(doc(db, "users", winner), { balance: increment(1000) });
           if (!loser.includes("CPU")) batch.update(doc(db, "users", loser), { balance: increment(600) });
 
-          // B) CALCULAR 3º PUESTO (Diferencia de goles en SEMIS)
-          // Semis IDs: Small(0,1), Big(4,5)
           const semi1Id = isSmall ? 0 : 4;
           const semi2Id = isSmall ? 1 : 5;
           const s1Match = matches[semi1Id];
           const s2Match = matches[semi2Id];
 
           if (s1Match && s2Match && s1Match.winner && s2Match.winner) {
-              // Identificar perdedores de semis
               const loser1 = s1Match.winner === s1Match.p1 ? s1Match.p2 : s1Match.p1;
               const loser2 = s2Match.winner === s2Match.p1 ? s2Match.p2 : s2Match.p1;
-              
-              // Calcular Diferencia de Goles de los perdedores en su partido de semi
-              // (Goles Favor - Goles Contra) -> Como perdieron, será negativo o 0.
-              const scoreL1 = s1Match.winner === s1Match.p1 ? s1Match.score2 : s1Match.score1; // Goles del perdedor
-              const scoreW1 = s1Match.winner === s1Match.p1 ? s1Match.score1 : s1Match.score2; // Goles del ganador (contra)
+              const scoreL1 = s1Match.winner === s1Match.p1 ? s1Match.score2 : s1Match.score1; 
+              const scoreW1 = s1Match.winner === s1Match.p1 ? s1Match.score1 : s1Match.score2; 
               const diff1 = scoreL1 - scoreW1;
-
               const scoreL2 = s2Match.winner === s2Match.p1 ? s2Match.score2 : s2Match.score1;
               const scoreW2 = s2Match.winner === s2Match.p1 ? s2Match.score1 : s2Match.score2;
               const diff2 = scoreL2 - scoreW2;
 
               let thirdPlace = null;
-              if (diff1 > diff2) thirdPlace = loser1; // Perdió por menos
-              else if (diff2 > diff1) thirdPlace = loser2;
-              else thirdPlace = Math.random() > 0.5 ? loser1 : loser2; // Empate técnico -> Moneda (O goles a favor, pero simplificamos)
-
-              // Dar premio al 3º
-              if (thirdPlace && !thirdPlace.includes("CPU")) {
-                  batch.update(doc(db, "users", thirdPlace), { balance: increment(250) });
-              }
-              alert(`🏆 CAMPEÓN: ${winner} (1000€)\n🥈 2º: ${loser} (600€)\n🥉 3º: ${thirdPlace} (250€, por Dif. Goles)`);
-          } else {
-              alert(`🏆 CAMPEÓN: ${winner} (1000€)\n🥈 2º: ${loser} (600€)`);
-          }
+              if (diff1 > diff2) thirdPlace = loser1; else if (diff2 > diff1) thirdPlace = loser2; else thirdPlace = Math.random() > 0.5 ? loser1 : loser2;
+              if (thirdPlace && !thirdPlace.includes("CPU")) batch.update(doc(db, "users", thirdPlace), { balance: increment(250) });
+              alert(`🏆 ${winner} (1000€)\n🥈 ${loser} (600€)\n🥉 ${thirdPlace} (250€)`);
+          } else { alert(`🏆 ${winner} (1000€)\n🥈 ${loser} (600€)`); }
 
           if(!winner.includes("CPU")) confetti({particleCount:500}); 
           await addDoc(collection(db,"history"),{winner,winnerTeam:isP1?m.p1Team:m.p2Team,date:serverTimestamp(),type:gameMode});
       }
 
-      await batch.commit(); // Ejecutar pagos y ranking
+      await batch.commit();
 
-      // 5. AVANZAR RONDA (Si no es la final)
       if (matchId !== finalId) {
           let next = [...matches];
           next = next.map((x: any) => x.id === matchId ? { ...x, score1: s1, score2: s2, winner: winner } : x);
@@ -212,7 +171,6 @@ export default function TorneoPage() {
           }
           await setDoc(doc(db, "sala", "principal"), { fifaMatches: next }, { merge: true });
       } else {
-          // Si es la final, solo actualizamos el resultado de la final, no hay a donde avanzar
           let next = [...matches];
           next = next.map((x: any) => x.id === matchId ? { ...x, score1: s1, score2: s2, winner: winner } : x);
           await setDoc(doc(db, "sala", "principal"), { fifaMatches: next }, { merge: true });
@@ -239,7 +197,6 @@ export default function TorneoPage() {
         ) : (
             <div className="grid gap-8">
                 <div className="space-y-4"><h3 className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Partidos</h3>
-                {/* FILTRAMOS para renderizar solo partidos que existen, ya no hay ID 3 o 7 */}
                 {(matches.length <= 4 ? [0,1,2] : [0,1,2,3,4,5,6]).map(id => matches[id] && <MatchCard key={id} m={matches[id]} onFinish={finalizarPartido} isFinal={matches.length <= 4 ? id===2 : id===6} />)}
                 </div>
             </div>
