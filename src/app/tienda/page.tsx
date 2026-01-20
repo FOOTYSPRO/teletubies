@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/lib/context';
 import { db } from '@/lib/firebase';
 import { doc, addDoc, collection, setDoc, increment, serverTimestamp } from 'firebase/firestore';
-import { ShoppingCart, Shield, ArrowRightLeft, Skull, ChevronLeft, Lock } from 'lucide-react'; // He añadido ArrowRightLeft
+import { ShoppingCart, ArrowRightLeft, Skull, ChevronLeft, Lock } from 'lucide-react';
 import Link from 'next/link';
 
 export default function TiendaPage() {
@@ -11,18 +11,17 @@ export default function TiendaPage() {
   const [selectedMatchId, setSelectedMatchId] = useState<string>("");
 
   const items = [
-  
     {
-      id: 'swap', // ANTES ERA VETO
+      id: 'swap',
       name: '🔄 El Cambiazo',
-      price: 8000,
+      price: 5000,
       desc: '¿Tu rival tiene al City y tú al PSV? Cómpralo y os INTERCAMBIÁIS los equipos.',
       color: 'bg-purple-50 border-purple-200 text-purple-700'
     },
     {
       id: 'injury',
       name: '🤕 Rompepiernas',
-      price: 5000,
+      price: 8000,
       desc: 'Tu rival debe sentar a su jugador con más media en el banquillo.',
       color: 'bg-red-50 border-red-200 text-red-700'
     }
@@ -106,7 +105,6 @@ export default function TiendaPage() {
                             <div className="flex items-center gap-2 mb-1">
                                 {item.id === 'swap' && <ArrowRightLeft size={18}/>}
                                 {item.id === 'injury' && <Skull size={18}/>}
-                                {item.id === 'insurance' && <Shield size={18}/>}
                                 <h3 className="font-black text-sm uppercase">{item.name}</h3>
                             </div>
                             <p className="text-[10px] font-medium opacity-80 leading-snug">{item.desc}</p>
