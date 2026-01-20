@@ -91,9 +91,11 @@ export default function TorneoPage() {
       await setDoc(doc(db, "sala", "principal"), { fifaMatches: clean }, { merge: true });
   };
 
-  // --- LÓGICA DE FINALIZAR CON APUESTAS AVANZADAS Y CUOTAS DINÁMICAS ---
+  // --- LÓGICA DE FINALIZAR CON APUESTAS AVANZADAS ---
   const finalizarPartido = async (matchId: number, s1: number, s2: number, corners: number) => {
     if (s1 === s2) return alert("❌ En eliminatorias no hay empate.");
+    console.log("Finalizando partido:", matchId, s1, s2, corners);
+
     const m = matches.find((x: any) => x.id === matchId);
     if (!m) return;
     const isP1 = s1 > s2;
@@ -106,16 +108,14 @@ export default function TorneoPage() {
       const pending = activeBets.filter((b: any) => b.matchId === matchId && b.status === 'pending');
       const batch = writeBatch(db);
       
-      // 1. CALCULAR LOS BOTES (POOLS) PARA CUOTAS DINÁMICAS
       const pools: any = { winner: 0, goals: 0, corners: 0 };
       const winningPools: any = { winner: 0, goals: 0, corners: 0 };
 
-      // Fase de cálculo
+      // 1. CÁLCULOS
       pending.forEach((b: any) => {
-          const type = b.type || 'winner';
-          pools[type] += b.amount; // Dinero total en la mesa
+          const type = (b.type && ['winner','goals','corners'].includes(b.type)) ? b.type : 'winner';
+          pools[type] += (b.amount || 0);
 
-          // Simular si ganaría para sumar al bote ganador
           let isVirtualWin = false;
           if (type === 'winner' && b.chosenWinner === winner) isVirtualWin = true;
           else if (type === 'goals') {
@@ -126,16 +126,15 @@ export default function TorneoPage() {
              if (b.chosenWinner.includes('Mas') && corners > 5.5) isVirtualWin = true;
              else if (b.chosenWinner.includes('Menos') && corners < 5.5) isVirtualWin = true;
           }
-          if (isVirtualWin) winningPools[type] += b.amount;
+          if (isVirtualWin) winningPools[type] += (b.amount || 0);
       });
       
-      // 2. REPARTIR PREMIOS
+      // 2. REPARTO
       pending.forEach((b: any) => {
           const ref = doc(db, "bets", b.id);
-          const type = b.type || 'winner';
+          const type = (b.type && ['winner','goals','corners'].includes(b.type)) ? b.type : 'winner';
           let won = false;
 
-          // Verificar victoria real
           if (type === 'winner' && b.chosenWinner === winner) won = true;
           else if (type === 'goals') {
              if (b.chosenWinner.includes('Mas') && totalGoals > (b.chosenWinner.includes('3.5')?3.5:2.5)) won = true;
@@ -147,15 +146,12 @@ export default function TorneoPage() {
           }
 
           if (won) {
-              // CÁLCULO DE CUOTA FINAL: (Total / Ganadores)
-              // Si eres el único, te llevas todo (xTotal/xTuApuesta). Mínimo x1.05
               const totalMoney = pools[type];
               const winnersMoney = winningPools[type];
               let odd = winnersMoney > 0 ? (totalMoney / winnersMoney) : 1;
-              if (odd < 1.05) odd = 1.05; // Seguridad para que siempre ganes algo
+              if (odd < 1.05) odd = 1.05;
 
               const profit = Math.floor(b.amount * odd);
-              
               batch.update(doc(db, "users", b.bettor), { balance: increment(profit) }); 
               batch.update(ref, { status: 'won', finalOdd: odd.toFixed(2) });
           } else {
@@ -175,7 +171,7 @@ export default function TorneoPage() {
           }
       }
       
-      // AVANZAR RONDA
+      // AVANZAR
       let next = [...matches];
       next = next.map((x: any) => x.id === matchId ? { ...x, score1: s1, score2: s2, winner: winner } : x);
 
@@ -216,13 +212,11 @@ export default function TorneoPage() {
             <div className="bg-white p-8 rounded-3xl border shadow-xl text-center max-w-3xl mx-auto mt-10">
                 <div className="inline-block p-4 bg-blue-50 rounded-full mb-6"><Settings size={48} className="text-blue-600"/></div>
                 <h2 className="text-4xl font-black mb-6">PREPARAR TORNEO</h2>
-                
                 <div className="flex justify-center gap-4 mb-8">
                     <button onClick={()=>setGameMode('1vs1')} className={`px-6 py-2 rounded-full font-black text-sm uppercase ${gameMode==='1vs1'?'bg-black text-white':'bg-gray-100'}`}>1 vs 1</button>
                     <button onClick={()=>setGameMode('2vs2')} className={`px-6 py-2 rounded-full font-black text-sm uppercase ${gameMode==='2vs2'?'bg-black text-white':'bg-gray-100'}`}>2 vs 2</button>
                 </div>
                 <button onClick={addCpu} className="mb-6 flex gap-2 mx-auto bg-purple-100 text-purple-700 px-4 py-2 rounded-xl font-bold text-xs uppercase"><Bot size={16}/> CPU</button>
-
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10 text-left">
                     {users.map((u: any) => (
                         <button key={u.id} onClick={()=>togglePlayerSelection(u.id)} className={`p-4 rounded-xl border-2 text-sm font-bold truncate transition ${selectedPlayers.includes(u.id)?'bg-blue-600 border-blue-600 text-white':'bg-white text-gray-600 border-gray-100'}`}>{u.id}</button>
@@ -266,16 +260,22 @@ function MatchCard({ m, onFinish, isFinal, label }: { m?: any, onFinish: (id: nu
                 {m.winner ? <span className="font-mono font-black text-3xl">{m.score2}</span> : <input type="number" className="w-14 h-14 bg-gray-50 text-center rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-black border-2 border-gray-100" value={s2} onChange={e=>setS2(e.target.value)} disabled={isWaiting} />}
             </div>
 
-            {/* INPUT DE CORNERS (Solo si el partido está activo) */}
             {!m.winner && !isWaiting && (
                 <div className="mb-4">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Total Corners:</label>
-                    <input type="number" placeholder="Ej: 8" className="w-full mt-1 bg-gray-50 p-2 rounded-xl text-sm font-bold border-2 border-gray-100 focus:border-black outline-none" value={corn} onChange={e=>setCorn(e.target.value)} />
+                    <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Total Corners (Opcional):</label>
+                    <input type="number" placeholder="0" className="w-full mt-1 bg-gray-50 p-2 rounded-xl text-sm font-bold border-2 border-gray-100 focus:border-black outline-none" value={corn} onChange={e=>setCorn(e.target.value)} />
                 </div>
             )}
 
             {!m.winner && !isWaiting && (
-                <button onClick={()=>s1&&s2&&corn&&onFinish(m.id, +s1, +s2, +corn)} className="w-full bg-black hover:bg-gray-900 text-white text-xs font-black py-4 rounded-2xl transition shadow-md uppercase tracking-widest flex justify-center items-center gap-2">
+                // LÓGICA DE BOTÓN ARREGLADA: Permite finalizar aunque corn sea "" (envía 0)
+                <button 
+                    onClick={() => {
+                        if (s1 === "" || s2 === "") return alert("❌ Introduce el marcador de goles.");
+                        onFinish(m.id, +s1, +s2, corn ? +corn : 0);
+                    }} 
+                    className="w-full bg-black hover:bg-gray-900 text-white text-xs font-black py-4 rounded-2xl transition shadow-md uppercase tracking-widest flex justify-center items-center gap-2"
+                >
                     Finalizar Partido →
                 </button>
             )}
